@@ -1,0 +1,19 @@
+{
+  "name": "Finance Console",
+  "short_name": "Finance",
+  "description": "Finance Console finance console for billing, ledger, daily stock, and reports.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f7f1e7",
+  "theme_color": "#b7791f",
+  "icons": [
+    {
+      "src": "./assets/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
