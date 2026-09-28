@@ -213,17 +213,18 @@ function renderLoginScreen(setupMode = false) {
           <span>${setupMode ? "First Time Setup" : "Welcome Back"}</span>
           <h2>${setupMode ? "Create the owner account" : "Login to continue"}</h2>
         </div>
-        <div class="report-form auth-form">
-          <input type="text" id="authUsername" placeholder="Username" autocomplete="username">
-          ${setupMode ? `<input type="text" id="authDisplayName" placeholder="Display name">` : ""}
-          <input type="password" id="authPassword" placeholder="Password" autocomplete="current-password">
+        <form id="authForm" onsubmit="event.preventDefault(); submitAuthForm(${setupMode})"><div class="report-form auth-form">
+          <label class="form-field"><span>Username</span><input type="text" id="authUsername" required autocomplete="username" autocapitalize="none"></label>
+          ${setupMode ? `<label class="form-field"><span>Your name</span><input type="text" id="authDisplayName" autocomplete="name"></label>` : ""}
+          <label class="form-field"><span>Password</span><input type="password" id="authPassword" required autocomplete="${setupMode ? "new-password" : "current-password"}"></label>
         </div>
         <div class="report-actions">
-          <button onclick="${setupMode ? "setupOwnerAccount()" : "loginUser()"}">${setupMode ? "Create Owner" : "Login"}</button>
-        </div>
+          <button type="submit">${setupMode ? "Create Owner" : "Login"}</button>
+        </div></form>
       </div>
     </div>
   `;
+  if (typeof enhanceFinancePage === "function") enhanceFinancePage("login");
 }
 
 async function bootAuth() {
@@ -504,13 +505,14 @@ function setDailyEntryWorkspace(mode) {
       const active = button.dataset.entryTab === selectedMode;
       button.classList.toggle("active", active);
       button.setAttribute("aria-selected", active ? "true" : "false");
+      button.tabIndex = active ? 0 : -1;
     });
     document.querySelectorAll("[data-entry-panel]").forEach(panel => {
       panel.hidden = panel.dataset.entryPanel !== selectedMode;
     });
 }
 
-function loadPage(page) {
+function loadPage(page, options = {}) {
     if (!currentUser) {
       renderLoginScreen(authNeedsSetup);
       return;
@@ -544,6 +546,10 @@ function loadPage(page) {
     document.querySelectorAll(".menu button").forEach(btn => btn.classList.remove("active"));
     const activeBtn = document.getElementById(`menu-${page}`);
     if (activeBtn) activeBtn.classList.add("active");
+    document.querySelectorAll(".menu button").forEach(button => {
+      if (button === activeBtn) button.setAttribute("aria-current", "page");
+      else button.removeAttribute("aria-current");
+    });
 
     // --- Upload Page
     if (page === "upload") {
@@ -572,18 +578,18 @@ function loadPage(page) {
             <button type="button" data-entry-tab="sales" aria-selected="false" onclick="setDailyEntryWorkspace('sales')"><i data-lucide="shopping-bag"></i><span>Sales</span></button>
             <button type="button" data-entry-tab="payments" aria-selected="false" onclick="setDailyEntryWorkspace('payments')"><i data-lucide="banknote"></i><span>Payments</span></button>
             <button type="button" data-entry-tab="stock" aria-selected="false" onclick="setDailyEntryWorkspace('stock')"><i data-lucide="clipboard-check"></i><span>Stock Count</span></button>
-            <button type="button" data-entry-tab="setup" aria-selected="false" onclick="setDailyEntryWorkspace('setup')"><i data-lucide="settings-2"></i><span>Setup</span></button>
+            <button type="button" data-entry-tab="setup" aria-selected="false" onclick="setDailyEntryWorkspace('setup')"><i data-lucide="settings-2"></i><span>Contacts & Opening Balances</span></button>
           </div>
 
           <div class="section upload-shell-section section-full entry-workspace-panel" data-entry-panel="setup" hidden>
             <div class="section-head upload-section-head">
               <div class="upload-heading-block">
-                <h2>Party Directory</h2>
+                <h2>Customers & Suppliers</h2>
               </div>
             </div>
             <div class="upload-box manual-entry-row party-directory-form">
               <select id="directoryPartySelect" onchange="selectDirectoryParty(this.value)">
-                <option value="">Select saved party</option>
+                <option value="">Select a customer or supplier</option>
               </select>
               <input type="hidden" id="directoryPartyId">
               <div class="typeahead-field">
@@ -593,37 +599,37 @@ function loadPage(page) {
               <input type="text" id="directoryPartyPhone" placeholder="Phone number">
               <input type="text" id="directoryPartyAddress" placeholder="Address (optional)">
               <select id="directoryPartyType">
-                <option value="BOTH">Customer / Both</option>
-                <option value="VENDOR">Vendor</option>
-                <option value="DEALER">Dealer</option>
+                <option value="BOTH">Customer & supplier (both)</option>
+                <option value="VENDOR">Customer (vendor)</option>
+                <option value="DEALER">Supplier (dealer)</option>
               </select>
-              <button type="button" class="directory-save-button" onclick="savePartyDirectoryEntry()">Save Party</button>
+              <button type="button" class="directory-save-button" onclick="savePartyDirectoryEntry()">Save Contact</button>
             </div>
           </div>
 
           <div class="section upload-shell-section upload-entry-section entry-workspace-panel" data-entry-panel="purchases">
             <div class="section-head upload-section-head">
               <div class="upload-heading-block">
-                <h2>Purchases from Dealers</h2>
+                <h2>Record purchases</h2><p class="section-help">Stock bought from your suppliers (dealers).</p>
               </div>
             </div>
             <div id="dealerEntryRows" class="stock-rows"></div>
             <div class="upload-box upload-actions">
-              <button onclick="addDealerEntryRow()">Add Dealer Row</button>
-              <button onclick="submitDealerEntries()">Save Dealer Entries</button>
+              <button onclick="addDealerEntryRow()">Add purchase</button>
+              <button onclick="submitDealerEntries()">Save purchases</button>
             </div>
           </div>
 
           <div class="section upload-shell-section upload-entry-section entry-workspace-panel" data-entry-panel="sales" hidden>
             <div class="section-head upload-section-head">
               <div class="upload-heading-block">
-                <h2>Sales to Vendors</h2>
+                <h2>Record sales</h2><p class="section-help">Sales to your trade customers (vendors).</p>
               </div>
             </div>
             <div id="vendorEntryRows" class="stock-rows"></div>
             <div class="upload-box upload-actions">
-              <button onclick="addVendorEntryRow()">Add Vendor Row</button>
-              <button onclick="submitVendorEntries()">Save Vendor Entries</button>
+              <button onclick="addVendorEntryRow()">Add sale</button>
+              <button onclick="submitVendorEntries()">Save sales</button>
             </div>
           </div>
 
@@ -656,7 +662,7 @@ function loadPage(page) {
           <div class="section upload-shell-section process-day-section section-full entry-workspace-panel" data-entry-panel="stock" hidden>
             <div class="section-head upload-section-head">
               <div class="upload-heading-block">
-                <h2>Process Day</h2>
+                <h2>Save closing stock</h2><p class="section-help">Enter the stock left at the end of the day. This becomes the next day’s opening stock.</p>
               </div>
             </div>
             <div class="upload-box process-day-controls">
@@ -677,7 +683,7 @@ function loadPage(page) {
             </div>
             <div class="upload-box upload-actions">
               <button onclick="addActualStockRow()">Add Hen Type</button>
-              <button onclick="processDay()">Process</button>
+              <button onclick="processDay()">Save closing stock</button>
             </div>
             <div id="processDaySummary" class="notice upload-status" style="display:none;"></div>
           </div>
@@ -712,6 +718,7 @@ function loadPage(page) {
       `;
 
       setTimeout(() => {
+        if (!isActivePage(page)) return;
         const uploadWorkingDate = document.getElementById("uploadWorkingDate");
         const processDate = document.getElementById("processDate");
         if (uploadWorkingDate) uploadWorkingDate.value = formatDateInput(new Date());
@@ -739,7 +746,7 @@ function loadPage(page) {
 
     // --- Dashboard Page
     else if (page === "dashboard") {
-      title.innerText = "Business Dashboard";
+      title.innerText = "Overview";
 
       content.innerHTML = `
         <div class="container dashboard-page">
@@ -753,6 +760,7 @@ function loadPage(page) {
 
           <div class="quick-actions" aria-label="Quick actions">
             <button type="button" onclick="loadPage('retail')"><i data-lucide="receipt-text"></i><span>New bill</span></button>
+            <button type="button" onclick="loadPage('retail', { retailMode: 'payment' })"><i data-lucide="banknote"></i><span>Record payment</span></button>
             <button type="button" onclick="loadPage('upload')"><i data-lucide="list-plus"></i><span>Daily entries</span></button>
             <button type="button" onclick="loadPage('ledger')"><i data-lucide="book-open-check"></i><span>Check ledger</span></button>
             <button type="button" onclick="loadPage('daily-sheet')"><i data-lucide="sheet"></i><span>Daily sheet</span></button>
@@ -770,19 +778,19 @@ function loadPage(page) {
             </div>
 
             <div class="dashboard-kpi-card tone-green">
-              <span>Receivable</span>
+              <span>To collect · Receivable</span>
               <h2 id="receivable">₹ 0</h2>
             </div>
 
             <div class="dashboard-kpi-card tone-red">
-              <span>Payable</span>
+              <span>To pay · Payable</span>
               <h2 id="payable">₹ 0</h2>
             </div>
           </div>
 
           <div class="process-status-bar">
             <div>
-              <span>Process status</span>
+              <span>Closing stock</span>
               <strong id="dashboardProcessStatus">Pending</strong>
             </div>
             <p id="dashboardProcessMeta">No item rows processed</p>
@@ -877,6 +885,7 @@ function loadPage(page) {
 
       // ✅ Auto load dashboard
       setTimeout(() => {
+        if (!isActivePage(page)) return;
         const today = formatDateInput(new Date());
         document.getElementById("dashboardDate").value = today;
         loadDashboard();
@@ -885,7 +894,7 @@ function loadPage(page) {
 
     // --- Access Control Page
     else if (page === "access-control") {
-      title.innerText = "Access Control";
+      title.innerText = "Users & Outlets";
 
       content.innerHTML = `
         <div class="container access-control-page">
@@ -953,6 +962,7 @@ function loadPage(page) {
       `;
 
       setTimeout(() => {
+        if (!isActivePage(page)) return;
         loadOutletAdminData();
         loadUserAccessList();
         syncUserOutletPicker();
@@ -970,9 +980,9 @@ function loadPage(page) {
           <div class="card search-card toolbar ledger-query-card">
             <div class="ledger-query-fields">
               <div class="form-field ledger-party-field">
-                <span>Party</span>
+                <span>Customer / supplier</span>
                 <div class="typeahead-field">
-                  <input type="text" id="party" placeholder="Enter party name" autocomplete="off" oninput="suggestParties()" onfocus="suggestParties()" onblur="scheduleSuggestionBoxHide('ledgerPartySuggestBox')">
+                  <input type="text" id="party" placeholder="Search by name" autocomplete="off" oninput="suggestParties()" onfocus="suggestParties()" onblur="scheduleSuggestionBoxHide('ledgerPartySuggestBox')">
                   <div id="ledgerPartySuggestBox" class="typeahead-box"></div>
                 </div>
               </div>
@@ -987,11 +997,11 @@ function loadPage(page) {
 
           <div class="summary ledger-summary">
             <div class="summary-box ledger-account-balance" hidden>
-              <span>Receivable</span>
+              <span>To collect · Receivable</span>
               <h2 id="receivableBalance">₹ 0</h2>
             </div>
             <div class="summary-box ledger-account-balance" hidden>
-              <span>Payable</span>
+              <span>To pay · Payable</span>
               <h2 id="payableBalance">₹ 0</h2>
             </div>
             <div class="summary-box">
@@ -1016,7 +1026,7 @@ function loadPage(page) {
               </thead>
               <tbody id="ledgerBody">
                 <tr>
-                  <td colspan="6" class="empty">Search for a party to view the ledger</td>
+                  <td colspan="6" class="empty">Search for a customer or supplier to view their ledger</td>
                 </tr>
               </tbody>
             </table>
@@ -1028,7 +1038,7 @@ function loadPage(page) {
 
     // --- Retail Billing Page
     else if (page === "retail") {
-      title.innerText = "Retail Billing";
+      title.innerText = "Bills & Payments";
 
       content.innerHTML = `
         <div class="container">
@@ -1039,8 +1049,8 @@ function loadPage(page) {
 
               <div class="retail-workbench-head">
                 <div class="retail-mode-switch" role="tablist" aria-label="Retail billing mode">
-                  <button type="button" id="retailModeRegular" class="retail-mode-button active" onclick="setRetailBillingMode('regular')">Billing</button>
-                  <button type="button" id="retailModePayment" class="retail-mode-button" onclick="setRetailBillingMode('payment')">Payment Receipt</button>
+                  <button type="button" id="retailModeRegular" class="retail-mode-button active" onclick="setRetailBillingMode('regular')">Bill</button>
+                  <button type="button" id="retailModePayment" class="retail-mode-button" onclick="setRetailBillingMode('payment')">Record payment</button>
                 </div>
                 <div class="retail-header-actions">
                   <button type="button" class="button-secondary retail-reset-button" onclick="resetRetailForm()">New Bill</button>
@@ -1057,11 +1067,11 @@ function loadPage(page) {
                     <label class="form-field"><span>Bill no.</span><input type="text" id="retailBillNumber" placeholder="Bill number"></label>
                     <label class="form-field"><span>Cashier</span><input type="text" id="retailCashier" value="admin"></label>
                     <div class="billing-priority-field">
-                      <span class="billing-priority-label">Settlement</span>
+                      <span class="billing-priority-label">Payment status</span>
                       <select id="retailSettlementType">
-                        <option value="credit">Credit</option>
-                        <option value="partial">Part Payment</option>
-                        <option value="paid">Full Payment</option>
+                        <option value="credit">Pay later (credit)</option>
+                        <option value="partial">Partly paid</option>
+                        <option value="paid">Paid in full</option>
                       </select>
                     </div>
                     <label class="form-field"><span>Payment mode</span><select id="retailPaymentMode">
@@ -1071,7 +1081,7 @@ function loadPage(page) {
                         <option value="Credit">Credit</option>
                       </select></label>
                     <div class="form-field"><span>Customer</span><div class="typeahead-field">
-                        <input type="text" id="retailCustomerName" placeholder="Optional" autocomplete="off" oninput="suggestRetailCustomers()" onfocus="suggestRetailCustomers()">
+                        <input type="text" id="retailCustomerName" placeholder="Required for credit bills" autocomplete="off" oninput="suggestRetailCustomers()" onfocus="suggestRetailCustomers()">
                         <div id="retailCustomerSuggestBox" class="typeahead-box"></div>
                       </div>
                     </div>
@@ -1129,8 +1139,8 @@ function loadPage(page) {
                 </div>
                 <div class="report-actions retail-actions">
                   <button type="button" onclick="saveRetailBill({ autoStartNext: true })"><i data-lucide="save"></i><span>Save Bill</span></button>
-                  <button type="button" onclick="printCurrentRetailBill()"><i data-lucide="printer"></i><span>Print</span></button>
-                  <button type="button" onclick="sendCurrentRetailBill()"><i data-lucide="message-circle"></i><span>WhatsApp</span></button>
+                  <button type="button" onclick="printCurrentRetailBill()"><i data-lucide="printer"></i><span>Save & print</span></button>
+                  <button type="button" onclick="sendCurrentRetailBill()"><i data-lucide="message-circle"></i><span>Save & WhatsApp</span></button>
                 </div>
               </div>
 
@@ -1153,8 +1163,8 @@ function loadPage(page) {
                       <option value="Bank">Bank</option>
                       <option value="Cheque">Cheque</option>
                     </select></label>
-                  <div class="form-field"><span>Party</span><div class="typeahead-field">
-                      <input type="text" id="paymentReceiptPartyName" placeholder="Enter party name" autocomplete="off" oninput="suggestPaymentReceiptParties()" onfocus="suggestPaymentReceiptParties()">
+                  <div class="form-field"><span>Customer / supplier</span><div class="typeahead-field">
+                      <input type="text" id="paymentReceiptPartyName" placeholder="Search by name" autocomplete="off" oninput="suggestPaymentReceiptParties()" onfocus="suggestPaymentReceiptParties()">
                       <div id="paymentReceiptPartySuggestBox" class="typeahead-box"></div>
                     </div>
                   </div>
@@ -1170,8 +1180,8 @@ function loadPage(page) {
 
                 <div class="report-actions retail-actions">
                   <button type="button" onclick="savePaymentReceipt({ autoStartNext: true })"><i data-lucide="save"></i><span>Save Receipt</span></button>
-                  <button type="button" onclick="printCurrentPaymentReceipt()"><i data-lucide="printer"></i><span>Print</span></button>
-                  <button type="button" onclick="sendCurrentPaymentReceipt()"><i data-lucide="message-circle"></i><span>WhatsApp</span></button>
+                  <button type="button" onclick="printCurrentPaymentReceipt()"><i data-lucide="printer"></i><span>Save & print</span></button>
+                  <button type="button" onclick="sendCurrentPaymentReceipt()"><i data-lucide="message-circle"></i><span>Save & WhatsApp</span></button>
                   <button type="button" class="button-secondary" onclick="resetPaymentReceiptForm()"><i data-lucide="plus"></i><span>New Receipt</span></button>
                 </div>
               </div>
@@ -1247,7 +1257,12 @@ function loadPage(page) {
       `;
 
       setTimeout(() => {
-        if (typeof initRetailPage === "function") initRetailPage();
+        if (!isActivePage(page)) return;
+        if (typeof initRetailPage === "function") {
+          Promise.resolve(initRetailPage()).then(() => {
+            if (isActivePage("retail") && options.retailMode === "payment") setRetailBillingMode("payment");
+          }).catch(() => showToast("Some billing data could not load. Please try again."));
+        }
       }, 100);
     }
 
@@ -1351,6 +1366,7 @@ function loadPage(page) {
       `;
 
       setTimeout(() => {
+        if (!isActivePage(page)) return;
         if (typeof initRetailSetupPage === "function") initRetailSetupPage();
       }, 100);
     }
@@ -1366,8 +1382,8 @@ function loadPage(page) {
             <div class="daily-sheet-filter-group">
               <label class="form-field"><span>Sheet</span><select id="dailySheetType">
                   <option value="stock">Stock Sheet</option>
-                  <option value="vendor">Vendor Balance Sheet</option>
-                  <option value="dealer">Dealer Balance Sheet</option>
+                  <option value="vendor">Customer balances (vendors)</option>
+                  <option value="dealer">Supplier balances (dealers)</option>
                 </select></label>
               <label class="form-field"><span>Date</span><input type="date" id="dailySheetDate"></label>
             </div>
@@ -1382,7 +1398,7 @@ function loadPage(page) {
                 <h2 id="dailySheetTitle">Opening Stock</h2>
               </div>
               <div class="section-head-actions">
-                <button onclick="downloadDailySheetExcel()"><i data-lucide="sheet"></i><span>Excel</span></button>
+                <button onclick="downloadDailySheetExcel()"><i data-lucide="sheet"></i><span>Download Excel</span></button>
                 <button onclick="window.print()"><i data-lucide="printer"></i><span>Print</span></button>
               </div>
             </div>
@@ -1395,6 +1411,7 @@ function loadPage(page) {
       `;
 
       setTimeout(() => {
+        if (!isActivePage(page)) return;
         document.getElementById("dailySheetDate").value = formatDateInput(new Date());
         loadDailySheet();
       }, 100);
@@ -1490,7 +1507,7 @@ function loadPage(page) {
           <div class="card chart-card analytics-chart-card">
             <div class="dashboard-card-head">
               <div>
-                <span>Settlement</span>
+                <span>Payment status</span>
                 <h2>Payment Mode Split</h2>
               </div>
             </div>
@@ -1513,6 +1530,7 @@ function loadPage(page) {
 
       // ✅ Auto load analytics
       setTimeout(() => {
+        if (!isActivePage(page)) return;
         const today = new Date();
         const past = new Date();
         past.setDate(today.getDate() - 6);
@@ -1547,9 +1565,9 @@ function loadPage(page) {
                 </select></label>
 
               <div class="form-field">
-                <span>Party</span>
+                <span>Customer / supplier</span>
                 <div class="typeahead-field">
-                  <input type="text" id="reportParty" placeholder="Enter party name" autocomplete="off" oninput="suggestReportParties()" onfocus="suggestReportParties()" onblur="scheduleSuggestionBoxHide('reportPartySuggestBox')">
+                  <input type="text" id="reportParty" placeholder="Search by name" autocomplete="off" oninput="suggestReportParties()" onfocus="suggestReportParties()" onblur="scheduleSuggestionBoxHide('reportPartySuggestBox')">
                   <div id="reportPartySuggestBox" class="typeahead-box"></div>
                 </div>
               </div>
@@ -1561,8 +1579,8 @@ function loadPage(page) {
             </div>
 
             <div class="report-actions">
-              <button onclick="downloadReport('excel')"><i data-lucide="sheet"></i><span>Excel</span></button>
-              <button onclick="downloadReport('pdf')"><i data-lucide="file-text"></i><span>PDF</span></button>
+              <button onclick="downloadReport('excel')"><i data-lucide="sheet"></i><span>Download Excel</span></button>
+              <button onclick="downloadReport('pdf')"><i data-lucide="file-text"></i><span>Download PDF</span></button>
               <button type="button" id="shareReportImageButton" onclick="shareReportImage()"><i data-lucide="share-2"></i><span>Share Image</span></button>
             </div>
           </div>
@@ -1571,6 +1589,7 @@ function loadPage(page) {
       `;
 
       setTimeout(() => {
+        if (!isActivePage(page)) return;
         const today = new Date();
         const past = new Date();
         past.setDate(today.getDate() - 6);
@@ -1581,6 +1600,7 @@ function loadPage(page) {
       }, 100);
     }
 
+    if (typeof enhanceFinancePage === "function") enhanceFinancePage(page);
     refreshIcons();
   }
 

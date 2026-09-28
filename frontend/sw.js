@@ -1,21 +1,23 @@
-const SHELL_CACHE = "finance-shell-v20260904-1";
-const STATIC_CACHE = "finance-static-v20260904-1";
+const SHELL_CACHE = "finance-shell-v20260928-2";
+const STATIC_CACHE = "finance-static-v20260928-2";
 
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./css/style.css?v=20260904-1",
-  "./js/api.js?v=20260803-1",
-  "./js/app.js?v=20260904-1",
-  "./js/upload.js?v=20260904-1",
-  "./js/dashboard.js?v=20260904-1",
-  "./js/ledger.js?v=20260904-1",
-  "./js/analytics.js?v=20260903-1",
-  "./js/retail.js?v=20260904-1",
-  "./js/daily-sheet.js?v=20260903-1",
-  "./js/reports.js?v=20260903-1",
-  "./assets/app-icon.svg?v=20260515-1",
-  "./manifest.webmanifest?v=20260803-1"
+  "./css/style.css?v=20260928-2",
+  "./css/usability.css?v=20260928-2",
+  "./js/api.js?v=20260928-2",
+  "./js/app.js?v=20260928-2",
+  "./js/usability.js?v=20260928-2",
+  "./js/upload.js?v=20260928-2",
+  "./js/dashboard.js?v=20260928-2",
+  "./js/ledger.js?v=20260928-2",
+  "./js/analytics.js?v=20260928-2",
+  "./js/retail.js?v=20260928-2",
+  "./js/daily-sheet.js?v=20260928-2",
+  "./js/reports.js?v=20260928-2",
+  "./assets/app-icon.svg?v=20260928-2",
+  "./manifest.webmanifest?v=20260928-2"
 ];
 
 self.addEventListener("install", event => {

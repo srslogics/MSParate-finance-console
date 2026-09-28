@@ -62,7 +62,7 @@ function toggleReportFields() {
   const reportDateField = reportDate.closest(".form-field") || reportDate;
 
   partyField.style.display = needsParty || allowsParty ? "flex" : "none";
-  partyInput.placeholder = needsParty ? "Party name required" : "Party name optional";
+  partyInput.placeholder = needsParty ? "Customer or supplier required" : "Customer or supplier (optional)";
   startField.style.display = usesSingleDate ? "none" : "flex";
   endField.style.display = usesSingleDate ? "none" : "flex";
   reportDateField.style.display = usesSingleDate ? "flex" : "none";
@@ -78,7 +78,7 @@ function buildReportRequest(format) {
   if (!reportType) return null;
 
   if (reportType === "ledger" && !party) {
-    showToast("Enter party name");
+    showToast("Choose a customer or supplier");
     return null;
   }
 

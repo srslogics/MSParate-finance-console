@@ -399,6 +399,7 @@ function setRetailBillingMode(mode, options = {}) {
   const previewTitle = document.getElementById("retailPreviewTitle");
   const addItemButton = document.getElementById("retailAddItemButton");
 
+  if (typeof syncRetailTabs === "function") syncRetailTabs(retailBillingMode);
   if (regularButton) regularButton.classList.toggle("active", retailBillingMode === "regular");
   if (dressedButton) dressedButton.classList.toggle("active", retailBillingMode === "dressed");
   if (paymentButton) paymentButton.classList.toggle("active", retailBillingMode === "payment");
@@ -865,6 +866,11 @@ function renderRetailShortcuts() {
 
   regularContainer.innerHTML = "";
   dressedContainer.innerHTML = "";
+  const disclosure = document.querySelector(".item-shortcut-disclosure");
+  if (disclosure && !disclosure.dataset.initialized) {
+    disclosure.open = getRetailShortcuts().length > 0;
+    disclosure.dataset.initialized = "true";
+  }
   getRetailShortcuts().forEach(shortcut => {
     const shortcutLineType = (shortcut.line_type || "STANDARD").toUpperCase();
     const button = document.createElement("button");
@@ -1524,6 +1530,7 @@ function populateRetailFormFromBill(bill) {
 }
 
 function renderRetailPreview(bill, isDraft = false) {
+  if (typeof updateBillingSummary === "function") updateBillingSummary(bill, "bill");
   const preview = document.getElementById("retailPreview");
   if (!preview) return;
 
@@ -1536,6 +1543,7 @@ function renderRetailPreview(bill, isDraft = false) {
 }
 
 function renderPaymentReceiptPreview(receipt, isDraft = false) {
+  if (typeof updateBillingSummary === "function") updateBillingSummary(receipt, "payment");
   const preview = document.getElementById("retailPreview");
   if (!preview) return;
 
