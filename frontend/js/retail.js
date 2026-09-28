@@ -1,4 +1,4 @@
-const RETAIL_SHOP_PROFILE = {name: "Finance Console", proprietor: "", address: "", phone: ""};
+const RETAIL_SHOP_PROFILE = {name: "MSParte", proprietor: "", address: "", phone: ""};
 
 const RETAIL_PAYMENT_QR_VIEW = {label: "Scan & Pay", imageSrc: "", upiId: ""};
 

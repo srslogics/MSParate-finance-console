@@ -28,3 +28,7 @@ Run `node --test tests/party_balance_frontend.test.mjs` for balance regressions.
 The browser suite requires Node.js 20+ and Playwright. Install it with `npm install --no-save playwright`, then `npx playwright install chromium` and run `node tests/ui_usability.cjs`. Alternatively use an installed Chrome with `UI_BROWSER_CHANNEL=chrome node tests/ui_usability.cjs`. The suite starts its own local server and intercepts all API requests with synthetic fixtures. It never connects to an application database. An optional `UI_SCREENSHOT_DIR` saves preview images.
 
 Coverage includes all nine pages at 1440, 768, 390 and 320 px; visible labels and duplicate IDs; keyboard login and tabs; daily-entry submission and file preview/import; payments; bill totals and collapsed-field preservation; report date presets and export/share controls; and offline shell asset coverage. These checks do not exercise a physical printer, WhatsApp delivery or a production database.
+
+## MSParte colour guide
+
+Blue identifies primary actions and the selected page/tab. Green identifies received payments and completed states. Amber marks receivables and attention needed; red marks payables, outgoing payments, errors and removal actions. Sales/purchase totals remain neutral because sales are not necessarily collected cash. Labels and amounts accompany colour cues, and charts retain named legends. The public-facing name is MSParte; the GitHub repository identifier is unchanged.

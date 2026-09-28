@@ -40,6 +40,8 @@ async function loadDashboard() {
       "dashboardProcessStatus",
       data.process_status || (Number(data.processed_items_count || 0) > 0 ? "Processed" : "Pending")
     );
+    const processStatus = document.getElementById("dashboardProcessStatus");
+    if (processStatus) processStatus.dataset.meaning = /^(processed|complete|completed)$/i.test(processStatus.textContent.trim()) ? "in" : "pending";
     setTextValue(
       "dashboardProcessMeta",
       data.process_meta ||

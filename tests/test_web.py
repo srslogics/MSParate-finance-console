@@ -15,7 +15,7 @@ def test_public_shell_and_asset_boundaries():
                 response = await client.get(path)
                 assert response.status_code == 200
                 assert is_frontend_path(path)
-            assert 'MSParate' in (await client.get('/')).text
+            assert 'MSParte' in (await client.get('/')).text
             assert (await client.get('/?filename=../.env')).text == (await client.get('/')).text
             for path in ['/.env', '/app/db.py', '/js/%2e%2e/%2e%2e/.env']:
                 assert (await client.get(path)).status_code == 404

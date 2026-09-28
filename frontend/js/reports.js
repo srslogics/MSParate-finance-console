@@ -250,7 +250,7 @@ function buildReportImageSurface(report) {
       <thead><tr>${header}</tr></thead>
       <tbody>${body}</tbody>
     </table>
-    <div style="margin-top:14px;text-align:right;font-size:12px;color:#75685d;">Finance Console</div>
+    <div style="margin-top:14px;text-align:right;font-size:12px;color:#75685d;">MSParte</div>
   `;
   document.body.appendChild(host);
   return host;

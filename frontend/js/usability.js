@@ -231,6 +231,7 @@ function enhanceFinancePage(page) {
     document.getElementById('reportType').addEventListener('change', update);
     update();
   }
+  applyFinanceColours(content);
   labelFinanceControls(content);
   financeControlObserver = new MutationObserver(() => {
     financeControlObserver.disconnect();
@@ -273,8 +274,9 @@ function updateBillingSummary(data, kind) {
   const entries = kind === 'bill'
     ? [['Bill total', data.total_amount], ['Paid', data.paid_amount], ['Due on this bill', data.outstanding_amount]]
     : [[data.direction === 'PAID' ? 'Money paid' : 'Money received', data.amount]];
-  summary.replaceChildren(...entries.map(([label, value]) => {
+  summary.replaceChildren(...entries.map(([label, value], index) => {
     const item = document.createElement('div');
+    item.dataset.meaning = kind === 'payment' ? (data.direction === 'PAID' ? 'out' : 'in') : (index === 1 ? 'in' : index === 2 && Number(value) > 0 ? 'pending' : 'neutral');
     const caption = document.createElement('span');
     caption.textContent = label;
     const amount = document.createElement('strong');
@@ -303,4 +305,23 @@ async function submitAuthForm(setup) {
   } finally {
     button.disabled = false;
   }
+}
+
+// Colour supports the written label; it never replaces it.
+function applyFinanceColours(root) {
+  const meanings = {
+    receivable: 'pending', payable: 'out', dashboardPaymentsReceived: 'in',
+    dashboardPaymentsPaid: 'out', unclassifiedBalance: 'pending',
+    receivableBalance: 'pending', payableBalance: 'out'
+  };
+  for (const [id, meaning] of Object.entries(meanings)) {
+    const value = document.getElementById(id);
+    const card = value?.closest('.dashboard-kpi-card, .dashboard-mini-card, .summary-box');
+    if (card) card.dataset.meaning = meaning;
+  }
+  const legend = document.createElement('div');
+  legend.className = 'colour-guide';
+  legend.setAttribute('aria-label', 'Colour guide');
+  legend.innerHTML = '<span><b class="key-action">Blue</b> Actions & selected tabs</span><span><b class="key-in">Green</b> Received / completed</span><span><b class="key-pending">Amber</b> To collect / needs attention</span><span><b class="key-out">Red</b> To pay / money out / errors</span>';
+  root.querySelector('.container')?.append(legend);
 }
