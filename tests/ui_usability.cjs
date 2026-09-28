@@ -22,6 +22,7 @@ const server = http.createServer((req,res) => {
  const browser=await chromium.launch({headless:true,...(process.env.UI_BROWSER_CHANNEL ? {channel:process.env.UI_BROWSER_CHANNEL} : {})});
  try {
  const context=await browser.newContext({viewport:{width:1440,height:1000},serviceWorkers:'block'});
+ await context.addInitScript(() => { window.FINANCE_CONSOLE_API_URL = 'http://127.0.0.1:8000'; });
  const writes=[]; const errors=[];
  const user={id:'example-owner',username:'Demo owner',role:'OWNER',can_view_all_outlets:true,outlets:[{id:'example-outlet',name:'Demo outlet'}]};
  const bodies={

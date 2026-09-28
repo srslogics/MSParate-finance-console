@@ -1,9 +1,6 @@
-const DEFAULT_BASE_URL = "http://127.0.0.1:8000";
-const BASE_URL = (
-  window.FINANCE_CONSOLE_API_URL ||
-  localStorage.getItem("FINANCE_CONSOLE_API_URL") ||
-  DEFAULT_BASE_URL
-).replace(/\/$/, "");
+// Hosted frontend and API share one origin. An explicit window override supports local UI tests.
+const DEFAULT_BASE_URL = window.location.protocol === "file:" ? "http://127.0.0.1:8000" : window.location.origin;
+const BASE_URL = (window.FINANCE_CONSOLE_API_URL || DEFAULT_BASE_URL).replace(/\/$/, "");
 
 let activeRequests = 0;
 const responseCache = new Map();

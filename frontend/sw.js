@@ -1,23 +1,23 @@
-const SHELL_CACHE = "finance-shell-v20260928-2";
-const STATIC_CACHE = "finance-static-v20260928-2";
+const SHELL_CACHE = "finance-shell-v20260929-1";
+const STATIC_CACHE = "finance-static-v20260929-1";
 
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./css/style.css?v=20260928-2",
-  "./css/usability.css?v=20260928-2",
-  "./js/api.js?v=20260928-2",
-  "./js/app.js?v=20260928-2",
-  "./js/usability.js?v=20260928-2",
-  "./js/upload.js?v=20260928-2",
-  "./js/dashboard.js?v=20260928-2",
-  "./js/ledger.js?v=20260928-2",
-  "./js/analytics.js?v=20260928-2",
-  "./js/retail.js?v=20260928-2",
-  "./js/daily-sheet.js?v=20260928-2",
-  "./js/reports.js?v=20260928-2",
-  "./assets/app-icon.svg?v=20260928-2",
-  "./manifest.webmanifest?v=20260928-2"
+  "./css/style.css?v=20260929-1",
+  "./css/usability.css?v=20260929-1",
+  "./js/api.js?v=20260929-1",
+  "./js/app.js?v=20260929-1",
+  "./js/usability.js?v=20260929-1",
+  "./js/upload.js?v=20260929-1",
+  "./js/dashboard.js?v=20260929-1",
+  "./js/ledger.js?v=20260929-1",
+  "./js/analytics.js?v=20260929-1",
+  "./js/retail.js?v=20260929-1",
+  "./js/daily-sheet.js?v=20260929-1",
+  "./js/reports.js?v=20260929-1",
+  "./assets/app-icon.svg?v=20260929-1",
+  "./manifest.webmanifest?v=20260929-1"
 ];
 
 self.addEventListener("install", event => {
@@ -51,12 +51,13 @@ self.addEventListener("fetch", event => {
 
   if (!isSameOrigin(request.url)) return;
 
-  if (url.pathname.endsWith("/health") || url.pathname.includes("/api/")) {
-    event.respondWith(fetch(request));
-    return;
-  }
+  // Only public shell assets may be cached; never cache authenticated API data.
+  const shellDocument = url.pathname === "/" || url.pathname === "/index.html";
+  const publicAsset = ["/css/", "/js/", "/assets/"].some(prefix => url.pathname.startsWith(prefix))
+    || url.pathname === "/manifest.webmanifest";
+  if (!shellDocument && !publicAsset) return;
 
-  const isHtmlRequest = request.mode === "navigate" || request.headers.get("accept")?.includes("text/html");
+  const isHtmlRequest = shellDocument;
   if (isHtmlRequest) {
     event.respondWith(
       fetch(request)

@@ -1,3 +1,4 @@
+from app.web import is_frontend_path, mount_frontend
 from uuid import UUID, uuid4
 from io import BytesIO
 from urllib.parse import quote
@@ -9,7 +10,7 @@ import os
 import secrets
 
 from fastapi import FastAPI, HTTPException, Header
-from app.db import engine, Base
+from app.db import engine, Base, IS_SUPABASE_DATABASE
 from fastapi import UploadFile, File, Depends, Body
 import pandas as pd
 from openpyxl import Workbook
@@ -152,6 +153,15 @@ def ensure_database_schema():
         # Serialize boot-time schema work so parallel app instances don't deadlock
         # while creating tables and adding columns on the same relations.
         conn.execute(text("SELECT pg_advisory_xact_lock(4815162342)"))
+        # Bootstrap a fresh database before the compatibility ALTER/INDEX steps.
+        # Use the same transaction and lock so parallel starts stay serialized.
+        Base.metadata.create_all(bind=conn)
+        if IS_SUPABASE_DATABASE:
+            # This app authenticates through FastAPI, not the Supabase Data API.
+            # Deny public API access while the server's database role retains access.
+            for table in Base.metadata.sorted_tables:
+                quoted_name = conn.dialect.identifier_preparer.format_table(table)
+                conn.execute(text(f"ALTER TABLE {quoted_name} ENABLE ROW LEVEL SECURITY"))
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS parties (
                 id UUID PRIMARY KEY,
@@ -702,7 +712,7 @@ async def auth_middleware(request, call_next):
     path = request.url.path
     if request.method == "OPTIONS":
         return await call_next(request)
-    if path in PUBLIC_PATHS or any(path.startswith(prefix) for prefix in PUBLIC_PATH_PREFIXES):
+    if is_frontend_path(path) or path in PUBLIC_PATHS or any(path.startswith(prefix) for prefix in PUBLIC_PATH_PREFIXES):
         return await call_next(request)
 
     token = request.headers.get("X-Auth-Token")
@@ -719,9 +729,7 @@ async def auth_middleware(request, call_next):
 
     return await call_next(request)
 
-@app.get("/")
-def root():
-    return {"message": "Backend running"}
+mount_frontend(app)
 
 
 @app.get("/healthz")
