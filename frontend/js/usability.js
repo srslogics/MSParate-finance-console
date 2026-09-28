@@ -322,6 +322,6 @@ function applyFinanceColours(root) {
   const legend = document.createElement('div');
   legend.className = 'colour-guide';
   legend.setAttribute('aria-label', 'Colour guide');
-  legend.innerHTML = '<span><b class="key-action">Blue</b> Actions & selected tabs</span><span><b class="key-in">Green</b> Received / completed</span><span><b class="key-pending">Amber</b> To collect / needs attention</span><span><b class="key-out">Red</b> To pay / money out / errors</span>';
+  legend.innerHTML = '<span><b class="key-action">Gold</b> Actions & selected tabs</span><span><b class="key-in">Green</b> Received / completed</span><span><b class="key-pending">Amber</b> To collect / needs attention</span><span><b class="key-out">Red</b> To pay / money out / errors</span>';
   root.querySelector('.container')?.append(legend);
 }

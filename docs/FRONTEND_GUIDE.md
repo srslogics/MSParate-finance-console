@@ -31,4 +31,6 @@ Coverage includes all nine pages at 1440, 768, 390 and 320 px; visible labels an
 
 ## MSParte colour guide
 
-Blue identifies primary actions and the selected page/tab. Green identifies received payments and completed states. Amber marks receivables and attention needed; red marks payables, outgoing payments, errors and removal actions. Sales/purchase totals remain neutral because sales are not necessarily collected cash. Labels and amounts accompany colour cues, and charts retain named legends. The public-facing name is MSParte; the GitHub repository identifier is unchanged.
+Gold identifies primary actions and the selected page/tab. Green identifies received payments and completed states. Amber marks receivables and attention needed; red marks payables, outgoing payments, errors and removal actions. Sales/purchase totals remain neutral because sales are not necessarily collected cash. Labels and amounts accompany colour cues, and charts retain named legends. The public-facing name is MSParte; the GitHub repository identifier is unchanged.
+
+The MSParte theme uses gold (#F3C742) for actions, charcoal (#24231F) for navigation and text, and warm ivory (#FAF8F0) for the workspace. Buttons use dark text for contrast. Financial status colours remain green, amber and red with explicit labels.

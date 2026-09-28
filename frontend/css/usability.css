@@ -146,29 +146,29 @@ button:focus-visible, summary:focus-visible, a:focus-visible { outline: 3px soli
 
 /* MSParte: one consistent meaning for each colour, always paired with text. */
 :root {
- --bg:#f8fafc; --surface:#fff; --surface-soft:#f1f5f9;
- --ink:#0f172a; --muted:#475569; --line:#cbd5e1;
- --brand:#1d4ed8; --brand-dark:#1e40af; --sidebar:#0f172a;
+ --bg:#faf8f0; --surface:#fff; --surface-soft:#f5f1e5;
+ --ink:#24231f; --muted:#625e50; --line:#ded8c6;
+ --brand:#f3c742; --brand-dark:#785600; --sidebar:#24231f;
  --success:#166534; --warning:#92400e; --danger:#b91c1c;
- --ring:rgb(29 78 216 / .2);
+ --ring:rgb(120 86 0 / .2);
 }
 button, .report-actions button:first-child { background-image:none; }
 button:hover, .report-actions button:first-child:hover { background-image:none; }
-.button-secondary, .retail-actions button.button-secondary { background:#fff; color:#334155; border-color:#94a3b8; }
-.button-secondary:hover, .retail-actions button.button-secondary:hover { background:#f1f5f9; color:#0f172a; }
-.menu button.active, .menu button.active:hover { background:#1d4ed8; color:#fff; }
-.menu button.active::before { background:#fff; }
-.menu button:hover { background:#1e293b; }
-.menu button.active svg { color:#fff; }
-.workspace-tabs button.active, .retail-mode-button.active { background:#1d4ed8; border-color:#1d4ed8; color:#fff; box-shadow:none; }
-.workspace-tabs button.active:hover, .retail-mode-button.active:hover { background:#1e40af; color:#fff; }
-.billing-priority-field select { border-color:#94a3b8; box-shadow:none; background:#fff; }
-button:focus-visible, summary:focus-visible, a:focus-visible { outline-color:#1d4ed8; }
+.button-secondary, .retail-actions button.button-secondary { background:#fff; color:#454238; border-color:#a8a08a; }
+.button-secondary:hover, .retail-actions button.button-secondary:hover { background:#f5f1e5; color:#24231f; }
+.menu button.active, .menu button.active:hover { background:#f3c742; color:#24231f; }
+.menu button.active::before { background:#24231f; }
+.menu button:hover { background:#35332a; }
+.menu button.active svg { color:#24231f; }
+.workspace-tabs button.active, .retail-mode-button.active { background:#f3c742; border-color:#f3c742; color:#24231f; box-shadow:none; }
+.workspace-tabs button.active:hover, .retail-mode-button.active:hover { background:#dcb032; color:#24231f; }
+.billing-priority-field select { border-color:#a8a08a; box-shadow:none; background:#fff; }
+button:focus-visible, summary:focus-visible, a:focus-visible { outline-color:#785600; }
 .row-remove-button, .retail-item-row button { color:#b91c1c; background:#fff; border-color:#fca5a5; }
 .row-remove-button:hover, .retail-item-row button:hover { color:#991b1b; background:#fef2f2; border-color:#b91c1c; }
-.dashboard-kpi-card, .dashboard-mini-card, .metric, .summary-box { background:#fff; color:#0f172a; }
-.dashboard-kpi-card::before, .dashboard-mini-card::before { border-left-color:#64748b !important; }
-.metric::before { background:#64748b !important; }
+.dashboard-kpi-card, .dashboard-mini-card, .metric, .summary-box { background:#fff; color:#24231f; }
+.dashboard-kpi-card::before, .dashboard-mini-card::before { border-left-color:#8b8060 !important; }
+.metric::before { background:#8b8060 !important; }
 [data-meaning="in"] { background:#f0fdf4 !important; border-color:#86efac !important; border-left:5px solid #166534 !important; }
 [data-meaning="pending"] { background:#fffbeb !important; border-color:#fcd34d !important; border-left:5px solid #92400e !important; }
 [data-meaning="out"] { background:#fef2f2 !important; border-color:#fca5a5 !important; border-left:5px solid #b91c1c !important; }
@@ -180,12 +180,32 @@ button:focus-visible, summary:focus-visible, a:focus-visible { outline-color:#1d
 .notice.success { background:#f0fdf4; color:#166534; border:1px solid #86efac; }
 .notice.warning { background:#fffbeb; color:#92400e; border:1px solid #fcd34d; }
 .notice.error { background:#fef2f2; color:#b91c1c; border:1px solid #fca5a5; }
-.notice.info { background:#eff6ff; color:#1e40af; border:1px solid #93c5fd; }
-.retail-preview-panel, .retail-item-row-dressed { background:#f1f5f9; border-color:#cbd5e1; }
-.colour-guide { display:flex; flex-wrap:wrap; gap:8px 18px; font-size:12px; color:#475569; padding:12px 0; grid-column:1/-1; }
+.notice.info { background:#eff6ff; color:#785600; border:1px solid #93c5fd; }
+.retail-preview-panel, .retail-item-row-dressed { background:#f5f1e5; border-color:#ded8c6; }
+.colour-guide { display:flex; flex-wrap:wrap; gap:8px 18px; font-size:12px; color:#625e50; padding:12px 0; grid-column:1/-1; }
 .colour-guide b { display:inline-block; margin-right:3px; }
-.key-action { color:#1d4ed8; } .key-in { color:#166534; } .key-pending { color:#92400e; } .key-out { color:#b91c1c; }
+.key-action { color:#785600; background:#fff0ac; padding:2px 5px; border-radius:4px; } .key-in { color:#166534; } .key-pending { color:#92400e; } .key-out { color:#b91c1c; }
 @media (max-width:760px) { .billing-summary { gap:4px; } .billing-summary > div { padding:8px 5px; } .billing-summary strong { font-size:16px; } }
 @media print { .colour-guide { display:none; } }
 #dashboardProcessStatus[data-meaning="pending"] { color:#92400e; padding:3px 8px; border-left:0 !important; border-radius:4px; }
 #dashboardProcessStatus[data-meaning="in"] { color:#166534; padding:3px 8px; border-left:0 !important; border-radius:4px; }
+
+/* Gold is reserved for actions; amounts retain their labelled status colours. */
+button, .report-actions button:first-child, .quick-actions button:first-child { color:#24231f; }
+button:hover, .report-actions button:first-child:hover { color:#24231f; background:#dcb032; border-color:#c19a25; }
+.report-actions button:first-child:hover { background:#dcb032; border-color:#c19a25; }
+.sidebar { background:#24231f; }
+.brand strong { color:#f7d96c; }
+.brand span, .menu-label { color:#c9c3af; }
+.menu button, .menu button:hover { color:#f5f1e5; }
+.menu button.active, .menu button.active:hover { color:#24231f; }
+.menu svg { color:#d4cbb0; }
+.mobile-menu-button, .mobile-menu-button:hover { color:#f7d96c; background:transparent; }
+.mobile-menu-button span { color:#f7d96c; }
+.card, .section { box-shadow:0 2px 8px rgb(70 57 20 / .04); }
+.topbar { border-bottom-color:#ded8c6; }
+.retail-reset-button, .retail-shortcut-chip, .simple-disclosure summary::marker { color:#785600; }
+.row-remove-button:hover, .retail-item-row button:hover { color:#991b1b; }
+.notice.info { background:#f5f1e5; color:#454238; border-color:#ded8c6; }
+
+.manual-whatsapp-button, .manual-whatsapp-button:hover { color:#785600; background:#fff8df; border-color:#d8c58c; }
