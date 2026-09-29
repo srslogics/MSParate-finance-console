@@ -174,28 +174,22 @@ def label_value(label: str, value: Any, width: int = CHARS_PER_LINE) -> str:
 def retail_item_lines(item: dict, index: int):
     kg = float(item.get("weight") or 0)
     count = float(item.get("nag", item.get("quantity")) or 0)
-    nag = integerish(count) if count > 0 else "--"
-    name_lines = wrap_text(item.get("item_name") or "", 27)
-    lines = [lr(name_lines[0], money(item.get("amount")))]
-    lines.extend(name_lines[1:])
-    rate_unit = "KG" if kg > 0 or item.get("unit") == "KGS" else "PC"
-    details = [f"NAG: {nag}"]
-    if kg > 0:
-        details.append(f"{decimal3(kg)} KG")
-    details.append(f"RATE {money(item.get('rate'))}/{rate_unit}")
-    lines.extend(wrap_text("  ".join(details), CHARS_PER_LINE))
-
+    values = [item.get("item_name") or "", integerish(count) if count > 0 else "--",
+              decimal3(kg) if kg > 0 else "--", money(item.get("rate")), money(item.get("amount"))]
+    widths = [12, 3, 7, 7, 9]
+    cells = [wrap_text(str(value), width) for value, width in zip(values, widths)]
+    lines = []
+    for row in range(max(map(len, cells))):
+        parts = [cell[row] if row < len(cell) else "" for cell in cells]
+        lines.append(" ".join(part.ljust(width) if col == 0 else part.rjust(width)
+                              for col, (part, width) in enumerate(zip(parts, widths))))
     return lines
 
 
 def shop_header(shop: dict) -> bytes:
     out = bytearray(esc_align("center"))
     name = str(shop.get("name") or "Shop")
-    if name.endswith(" CHICKEN SHOP"):
-        out += esc_bold(True) + esc_double(True) + encode_line(name.removesuffix(" CHICKEN SHOP")) + esc_double(False) + esc_bold(False)
-        out += encode_line("C H I C K E N   S H O P") + esc_feed(1)
-    else:
-        out += esc_bold(True) + encode_line(name) + esc_bold(False)
+    out += esc_bold(True) + encode_line(name) + esc_bold(False)
     for line in [shop.get("proprietor"), shop.get("address"), f"MOB-{shop.get('phone')}" if shop.get("phone") else "", f"FSSAI LIC. NO. {shop.get('fssai')}" if shop.get("fssai") else ""]:
         if line:
             for part in wrap_text(str(line), CHARS_PER_LINE):
@@ -223,13 +217,11 @@ def build_retail_bytes(payload: dict) -> bytes:
             for part in wrap_text(f"{label}: {bill[key]}", CHARS_PER_LINE):
                 out += encode_line(part)
     out += encode_line(hr())
-    out += esc_bold(True) + encode_line(lr("ITEM", "AMOUNT (Rs.)")) + esc_bold(False)
+    out += esc_bold(True) + encode_line(f"{'ITEM':<12} {'NAG':>3} {'KG':>7} {'RATE':>7} {'AMOUNT':>9}") + esc_bold(False)
     out += encode_line(hr())
     for idx, item in enumerate(items, 1):
-        for position, line in enumerate(retail_item_lines(item, idx)):
-            out += esc_bold(position == 0) + encode_line(line) + esc_bold(False)
-        if idx < len(items):
-            out += esc_feed(1)
+        for line in retail_item_lines(item, idx):
+            out += encode_line(line)
     weight = sum(float(item.get("weight") or 0) for item in items)
     nag = sum(float(item.get("nag", item.get("quantity")) or 0) for item in items)
     out += encode_line(hr())
@@ -256,8 +248,8 @@ def build_retail_bytes(payload: dict) -> bytes:
         for line in wrap_text(str(bill["notes"]), CHARS_PER_LINE):
             out += encode_line(line)
     out += payment_qr_block() + encode_line(hr())
-    out += esc_feed(1) + esc_bold(True) + center("THANK YOU") + esc_bold(False)
-    out += center("WE LOOK FORWARD TO YOUR NEXT VISIT") + esc_feed(4) + esc_cut()
+    out += esc_feed(1) + esc_bold(True) + center("THANK YOU VISIT AGAIN") + esc_bold(False)
+    out += esc_feed(4) + esc_cut()
     return bytes(out)
 
 

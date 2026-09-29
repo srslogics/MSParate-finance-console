@@ -44,6 +44,6 @@ test('write failures are never blindly retried; deduplicated documents and reads
 test('receipt follows reference, retains exact totals, escapes data and labels piece quantities',()=>{
  const {ctx}=retailContext();
  const html=ctx.getRetailReceiptMarkup({date:'2026-09-29',time:'16:16:00',bill_number:'TEST',items:[{item_name:'<img src=x onerror=alert(1)>',unit:'PCS',quantity:2,rate:5.25,amount:10.5}],total_amount:10.5,paid_amount:10.5});
- for(const text of ['M. S. PARTE','CHICKEN SHOP','FSSAI LIC. NO.','NAG','AMOUNT','NAG: 2','₹10.50','TOTAL ROUNDOFF: 0.00','WE LOOK FORWARD TO YOUR NEXT VISIT','29/09/26'])assert(html.includes(text),text);
+ for(const text of ['M. S. PARTE','CHICKEN SHOP','FSSAI LIC. NO.','NAG','AMOUNT','NAG: 2','₹10.50','TOTAL ROUNDOFF: 0.00','THANK YOU VISIT AGAIN','29/09/26'])assert(html.includes(text),text);
  assert(!html.includes('<img src=x'));assert(!html.includes('TAX INVOICE'));
 });

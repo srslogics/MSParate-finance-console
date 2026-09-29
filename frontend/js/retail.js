@@ -2800,10 +2800,10 @@ function downloadFile(file) {
 function getSampleReceiptStyles() {
   // One monochrome design for preview, sharing and an 80 mm thermal roll.
   return `
-    .thermal-bill.sample-receipt { box-sizing:border-box; width:100%; max-width:80mm; padding:20px 12px 22px; margin:0 auto; background:#fff; color:#111; font:11px/1.45 Arial,Helvetica,sans-serif; font-variant-numeric:tabular-nums; }
+    .thermal-bill.sample-receipt { box-sizing:border-box; width:100%; max-width:80mm; padding:12px 9px 15px; margin:0 auto; background:#fff; color:#111; font:11px/1.45 Arial,Helvetica,sans-serif; font-variant-numeric:tabular-nums; }
     .sample-receipt * { box-sizing:border-box; color:inherit; }
-    .sample-receipt .shop-header { text-align:center; margin-bottom:20px; padding-bottom:16px; border-bottom:2px solid #111; }
-    .sample-receipt .shop-header h3 { font:700 27px/1.1 Georgia,"Times New Roman",serif; letter-spacing:1px; margin:0; }
+    .sample-receipt .shop-header { text-align:center; margin-bottom:15px; }
+    .sample-receipt .shop-header h3 { font:700 15px/1.25 Arial,Helvetica,sans-serif; letter-spacing:0; margin:0; }
     .sample-receipt .shop-category { font:700 10px/1.4 Arial,Helvetica,sans-serif; letter-spacing:3px; margin:6px 0 12px; }
     .sample-receipt .shop-header p { font:10px/1.5 Arial,Helvetica,sans-serif; margin:2px 0; overflow-wrap:anywhere; }
     .sample-receipt .shop-header .shop-fssai { font-size:9px; margin-top:7px; letter-spacing:.3px; }
@@ -2811,26 +2811,22 @@ function getSampleReceiptStyles() {
     .sample-receipt .sample-meta > span { min-width:0; overflow-wrap:anywhere; }
     .sample-receipt .sample-meta > span:first-child { font-weight:700; font-size:12px; }
     .sample-receipt .sample-meta > span:last-child { flex-shrink:0; text-align:right; }
-    .sample-receipt .sample-rule { border:0; border-top:1px solid #bbb; margin:12px 0; }
-    .sample-receipt .sample-columns { display:grid; grid-template-columns:minmax(0,1fr) minmax(70px,auto); column-gap:14px; align-items:baseline; }
-    .sample-receipt .sample-columns > * { min-width:0; overflow-wrap:anywhere; }
-    .sample-receipt .sample-columns > :last-child { text-align:right; }
-    .sample-receipt .sample-column-labels { font-size:9px; font-weight:600; letter-spacing:.6px; padding-bottom:6px; border-bottom:1px solid #111; }
-    .sample-receipt .sample-item { padding:10px 0; break-inside:avoid; }
-    .sample-receipt .sample-item + .sample-item { border-top:1px solid #ddd; }
-    .sample-receipt .sample-item-name { font-size:12px; font-weight:600; line-height:1.35; }
-    .sample-receipt .sample-item-amount { font-size:12px; font-weight:600; white-space:nowrap; letter-spacing:0; }
-    .sample-receipt .sample-item-details { display:flex; flex-wrap:wrap; gap:2px 9px; margin-top:4px; font-size:9px; line-height:1.5; }
-    .sample-receipt .sample-item-details span { white-space:nowrap; }
-    .sample-receipt .sample-summary { display:flex; justify-content:space-between; flex-wrap:wrap; gap:4px 8px; font-size:9px; margin:0; padding:9px 0 0; border-top:1px solid #111; }
+    .sample-receipt .sample-rule { border:0; border-top:1px dashed #111; margin:8px 0; }
+    .sample-receipt .sample-items { display:table; width:100%; min-width:0; max-width:100%; table-layout:fixed; border-collapse:collapse; margin:10px 0 0; background:#fff; font:10px/1.35 Arial,Helvetica,sans-serif; }
+    .sample-receipt .sample-items th, .sample-receipt .sample-items td { padding:5px 2px; text-align:right; vertical-align:top; border:0; border-radius:0; background:#fff; color:#111; font:inherit; letter-spacing:0; white-space:normal; overflow-wrap:anywhere; }
+    .sample-receipt .sample-items th { font-weight:700; border-top:1px dashed #111; border-bottom:1px dashed #111; }
+    .sample-receipt .sample-items th:first-child, .sample-receipt .sample-items td:first-child { text-align:left; padding-left:0; }
+    .sample-receipt .sample-items th:last-child, .sample-receipt .sample-items td:last-child { padding-right:0; }
+    .sample-receipt .sample-items tr { background:#fff; break-inside:avoid; }
+    .sample-receipt .sample-summary { display:flex; justify-content:space-between; flex-wrap:wrap; gap:4px 8px; font-size:9px; margin:0; padding:8px 0 0; border-top:1px dashed #111; }
     .sample-receipt .sample-summary span { white-space:nowrap; }
-    .sample-receipt .sample-total { display:flex; align-items:baseline; justify-content:space-between; font-size:11px; font-weight:600; gap:8px; padding:12px 0; border-top:1px solid #111; border-bottom:1px solid #111; margin:12px 0 6px; }
-    .sample-receipt .sample-total > span:last-child { font:700 23px/1.2 Arial,Helvetica,sans-serif; letter-spacing:-.5px; overflow-wrap:anywhere; min-width:0; }
+    .sample-receipt .sample-total { display:flex; align-items:baseline; justify-content:space-between; font-size:11px; font-weight:600; gap:8px; padding:8px 0; border-top:1px dashed #111; border-bottom:1px dashed #111; margin:8px 0 6px; }
+    .sample-receipt .sample-total > span:last-child { font:700 19px/1.2 Arial,Helvetica,sans-serif; letter-spacing:-.5px; overflow-wrap:anywhere; min-width:0; }
     .sample-receipt .sample-extra { display:flex; justify-content:space-between; gap:8px; margin:5px 0; }
     .sample-receipt .sample-extra > span:last-child { font-weight:600; }
     .sample-receipt .sample-customer, .sample-receipt .sample-notes { margin-top:10px; overflow-wrap:anywhere; white-space:pre-wrap; }
-    .sample-receipt .sample-footer { text-align:center; margin-top:18px; }
-    .sample-receipt .sample-footer strong { display:block; font:700 19px Georgia,"Times New Roman",serif; letter-spacing:.3px; }
+    .sample-receipt .sample-footer { text-align:center; margin-top:10px; }
+    .sample-receipt .sample-footer strong { display:block; font:700 11px Arial,Helvetica,sans-serif; letter-spacing:.3px; }
     .sample-receipt .sample-footer span { display:block; margin-top:5px; font-size:8px; letter-spacing:2px; }
     .sample-receipt .sample-roundoff { font-size:9px; text-align:right; }
     @media print { .sample-receipt { max-width:none; } .sample-receipt .sample-rule, .sample-receipt .sample-item { border-color:#555; } }
@@ -2839,8 +2835,7 @@ function getSampleReceiptStyles() {
 
 function getShopHeaderMarkup() {
   return `<div class="shop-header">
-    <h3>${escapeHtml(RETAIL_SHOP_PROFILE.name.replace(/ CHICKEN SHOP$/, ""))}</h3>
-    <div class="shop-category">CHICKEN SHOP</div>
+    <h3>${escapeHtml(RETAIL_SHOP_PROFILE.name)}</h3>
     <p>${escapeHtml(RETAIL_SHOP_PROFILE.address)}</p>
     <p>MOB-${escapeHtml(RETAIL_SHOP_PROFILE.phone)}</p>
     <p class="shop-fssai">FSSAI LIC. NO. ${escapeHtml(RETAIL_SHOP_PROFILE.fssai)}</p>
@@ -2858,10 +2853,13 @@ function getRetailReceiptMarkup(bill) {
   const rows = items.map(item => {
     const kg = Number(item.weight || 0);
     const count = Number(item.nag ?? item.quantity ?? 0);
-    const rateUnit = kg > 0 || item.unit === "KGS" ? "KG" : "PC";
-    return `<div class="sample-item"><div class="sample-columns">
-      <span class="sample-item-name">${escapeHtml(item.item_name)}</span><span class="sample-item-amount">${formatBillMoney(item.amount)}</span>
-      </div><div class="sample-item-details"><span>NAG: ${count > 0 ? formatBillNag(count) : "--"}</span>${kg > 0 ? `<span>${kg.toFixed(3)} KG</span>` : ""}<span>RATE ${formatBillRate(item.rate)}/${rateUnit}</span></div></div>`;
+    return `<tr class="sample-item">
+      <td>${escapeHtml(item.item_name)}</td>
+      <td>${count > 0 ? formatBillNag(count) : "--"}</td>
+      <td>${kg > 0 ? kg.toFixed(3) : "--"}</td>
+      <td>${formatBillRate(item.rate)}</td>
+      <td>${formatBillMoney(item.amount)}</td>
+    </tr>`;
   }).join("");
   const extra = (label, value) => `<div class="sample-extra"><span>${label}</span><span>${value}</span></div>`;
   return `<style>${getSampleReceiptStyles()}</style><div class="thermal-bill sample-receipt">
@@ -2869,9 +2867,11 @@ function getRetailReceiptMarkup(bill) {
     <div class="sample-meta"><span>BILL NO : ${escapeHtml(bill.bill_number)}</span><span>DATE: ${escapeHtml(date)}<br>TIME: ${escapeHtml(String(bill.time || "").slice(0,5))}</span></div>
     ${bill.local_only ? '<div class="sample-notes"><strong>PROVISIONAL — PENDING SYNC</strong></div>' : ''}
     ${bill.customer_name ? `<div class="sample-customer">CUSTOMER: ${escapeHtml(bill.customer_name)}${bill.customer_phone ? `<br>${escapeHtml(bill.customer_phone)}` : ""}${bill.customer_address ? `<br>${escapeHtml(bill.customer_address)}` : ""}</div>` : ""}
-    <hr class="sample-rule">
-    <div class="sample-columns sample-column-labels"><span>ITEM</span><span>AMOUNT (₹)</span></div>
-    ${rows}
+    <table class="sample-items" aria-label="Bill items">
+      <colgroup><col style="width:30%"><col style="width:10%"><col style="width:18%"><col style="width:19%"><col style="width:23%"></colgroup>
+      <thead><tr><th scope="col">ITEM</th><th scope="col">NAG</th><th scope="col">KG</th><th scope="col">RATE</th><th scope="col">AMOUNT</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
     <div class="sample-summary"><span>${items.length} ITEM${items.length === 1 ? "" : "S"} · NAG: ${nag > 0 ? formatBillNag(nag) : "--"}</span><span>${weight.toFixed(3)} KG TOTAL</span></div>
     ${Number(bill.ice_amount) > 0 ? extra("SUBTOTAL", formatBillMoney(bill.items_subtotal_amount ?? (Number(bill.total_amount || 0) - Number(bill.ice_amount || 0)))) : ""}
     ${Number(bill.ice_amount) > 0 ? extra("ICE", formatBillMoney(bill.ice_amount)) : ""}
@@ -2881,7 +2881,7 @@ function getRetailReceiptMarkup(bill) {
     ${bill.payment_mode && !["CASH", "CREDIT"].includes(bill.payment_mode.toUpperCase()) ? extra("PAYMENT", escapeHtml(bill.payment_mode)) : ""}
     ${bill.notes ? `<div class="sample-notes">${escapeHtml(bill.notes)}</div>` : ""}
     ${RETAIL_PAYMENT_QR_VIEW.imageSrc && RETAIL_PAYMENT_QR_VIEW.upiId ? `<div class="thermal-payment-qr"><strong>${escapeHtml(RETAIL_PAYMENT_QR_VIEW.label)}</strong><img src="${escapeHtml(RETAIL_PAYMENT_QR_VIEW.imageSrc)}" alt="Payment QR" width="140"><p>${escapeHtml(RETAIL_PAYMENT_QR_VIEW.upiId)}</p></div>` : ""}
-    <hr class="sample-rule"><div class="sample-footer"><strong>Thank you.</strong><span>WE LOOK FORWARD TO YOUR NEXT VISIT</span></div>
+    <hr class="sample-rule"><div class="sample-footer"><strong>THANK YOU VISIT AGAIN</strong></div>
   </div>`;
 }
 
