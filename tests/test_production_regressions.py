@@ -32,11 +32,11 @@ def test_thermal_bridge_layout_and_long_names():
     mod=bridge()
     data=mod.build_retail_bytes({'shop':{'name':'Synthetic test shop','fssai':'TEST'},'bill':{'bill_number':'TEST','date':'2026-09-29','time':'16:16','total_amount':10.25,'items':[{'item_name':'X'*60,'weight':0.1,'rate':102.5,'amount':10.25}]}})
     assert b'FSSAI LIC. NO. TEST' in data
-    assert b'29/09/26' in data and b'0.100Kg' in data and b'Rs.10.25' in data
-    assert b'TOTAL ROUNDOFF: 0.00' in data and b'THANK YOU VISIT AGAIN' in data
+    assert b'29/09/26' in data and b'0.100 KG' in data and b'Rs.10.25' in data
+    assert b'TOTAL ROUNDOFF: 0.00' in data and b'WE LOOK FORWARD TO YOUR NEXT VISIT' in data
     assert all(len(line)<=42 for line in mod.retail_item_lines({'item_name':'X'*60,'weight':0.1,'rate':102.5,'amount':10.25},1))
     assert mod.encode_line('danger\x1b@\x1dV') == b'danger@V\n'
-    assert b'2PCS' in mod.build_retail_bytes({'bill':{'items':[{'item_name':'Test','nag':2,'amount':10}]}})
+    assert b'NAG: 2' in mod.build_retail_bytes({'bill':{'items':[{'item_name':'Test','nag':2,'amount':10}]}})
 
 
 def test_report_names_export_as_text_not_formulas(endpoints):

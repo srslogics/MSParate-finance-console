@@ -49,3 +49,7 @@ Not verified here: physical printer width/encoding/cutter/driver behaviour, actu
 Run `python -m pytest -q`, `node --test tests/*.test.mjs`, and the Chrome scripts `tests/ui_usability.cjs` and `tests/receipt_render.cjs` (Playwright required; `UI_BROWSER_CHANNEL=chrome` selects an installed Chrome). Optional `UI_SCREENSHOT_DIR` selects the receipt image destination.
 
 For full integration, start the app with an explicitly overridden `DATABASE_URL` pointing at a **fresh disposable local PostgreSQL database**, and `LEDGER_CUTOVER_DATE=1970-01-01`. Use local port 8019 by default, then run `python tests/production_api_check.py` followed by `node tests/production_browser.cjs`. These scripts refuse non-loopback targets; the API script also refuses an already initialized app. Never point this procedure at the live Supabase database.
+
+## Receipt presentation refinement
+
+The subsequent premium receipt update uses a larger shop wordmark, clearer spacing, aligned item amounts and a stronger total. The owner-requested **NAG** heading shows actual piece counts, with kilograms retained in a separate **KG** column; the unused T NUM placeholder is removed. The summary totals NAG across both weighted and piece items. Missing counts show `--`, rather than relabelling kilograms as pieces. The browser/share layout and Windows bridge both reflect these changes. Decimal amounts remain unchanged. Shell version: `20260929-6`. Targeted receipt checks and a 45-item image export passed; physical printer verification remains outstanding.

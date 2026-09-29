@@ -2798,36 +2798,48 @@ function downloadFile(file) {
 }
 
 function getSampleReceiptStyles() {
-  // Shared by on-screen preview, image export, and browser printing.
+  // One monochrome design for preview, sharing and an 80 mm thermal roll.
   return `
-    .thermal-bill.sample-receipt { box-sizing:border-box; width:100%; max-width:80mm; padding:12px 8px 16px; margin:0 auto; background:#fff; color:#000; font:12px/1.3 "Courier New",monospace; }
-    .sample-receipt * { box-sizing:border-box; color:#000; }
-    .sample-receipt .shop-header { text-align:center; margin-bottom:20px; }
-    .sample-receipt .shop-header h3 { font: bold 15px/1.2 "Courier New",monospace; margin:0 0 3px; }
-    .sample-receipt .shop-header p { font: bold 11px/1.25 "Courier New",monospace; margin:1px 0; overflow-wrap:anywhere; }
-    .sample-receipt .shop-header .shop-fssai { font-size:12px; }
-    .sample-receipt .sample-meta { display:flex; justify-content:space-between; align-items:end; gap:8px; }
+    .thermal-bill.sample-receipt { box-sizing:border-box; width:100%; max-width:80mm; padding:20px 12px 22px; margin:0 auto; background:#fff; color:#111; font:11px/1.45 Arial,Helvetica,sans-serif; font-variant-numeric:tabular-nums; }
+    .sample-receipt * { box-sizing:border-box; color:inherit; }
+    .sample-receipt .shop-header { text-align:center; margin-bottom:20px; padding-bottom:16px; border-bottom:2px solid #111; }
+    .sample-receipt .shop-header h3 { font:700 27px/1.1 Georgia,"Times New Roman",serif; letter-spacing:1px; margin:0; }
+    .sample-receipt .shop-category { font:700 10px/1.4 Arial,Helvetica,sans-serif; letter-spacing:3px; margin:6px 0 12px; }
+    .sample-receipt .shop-header p { font:10px/1.5 Arial,Helvetica,sans-serif; margin:2px 0; overflow-wrap:anywhere; }
+    .sample-receipt .shop-header .shop-fssai { font-size:9px; margin-top:7px; letter-spacing:.3px; }
+    .sample-receipt .sample-meta { display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:10px; }
     .sample-receipt .sample-meta > span { min-width:0; overflow-wrap:anywhere; }
-    .sample-receipt .sample-meta > span:last-child { flex-shrink:0; }
-    .sample-receipt .sample-rule { border:0; border-top:1px dashed #000; margin:9px 0; }
-    .sample-receipt .sample-columns { display:grid; grid-template-columns:minmax(0,1fr) 36px 64px 64px; gap:3px; align-items:start; }
+    .sample-receipt .sample-meta > span:first-child { font-weight:700; font-size:12px; }
+    .sample-receipt .sample-meta > span:last-child { flex-shrink:0; text-align:right; }
+    .sample-receipt .sample-rule { border:0; border-top:1px solid #bbb; margin:12px 0; }
+    .sample-receipt .sample-columns { display:grid; grid-template-columns:minmax(0,1fr) 30px 52px 62px; gap:5px; align-items:start; }
     .sample-receipt .sample-columns > span { min-width:0; overflow-wrap:anywhere; }
-    .sample-receipt .sample-columns > span:not(:first-child) { text-align:right; }
-    .sample-receipt .sample-item { margin:8px 0; break-inside:avoid; }
-    .sample-receipt .sample-amount { width:42%; text-align:center; margin-top:2px; }
-    .sample-receipt .sample-summary { display:flex; justify-content:space-between; gap:8px; font-size:11px; }
-    .sample-receipt .sample-total { display:flex; justify-content:space-between; font-size:18px; font-weight:bold; gap:8px; }
-    .sample-receipt .sample-extra { display:flex; justify-content:space-between; gap:8px; margin:3px 0; }
-    .sample-receipt .sample-customer, .sample-receipt .sample-notes { margin-top:8px; overflow-wrap:anywhere; white-space:pre-wrap; }
-    .sample-receipt .sample-footer { text-align:center; font-size:15px; font-weight:bold; margin-top:12px; }
-    .sample-receipt .sample-roundoff { font-size:12px; }
-    @media print { .sample-receipt { max-width:none; } }
+    .sample-receipt .sample-columns > span:not(:first-child) { text-align:right; font-family:"Courier New",monospace; }
+    .sample-receipt .sample-column-labels { font-size:9px; font-weight:700; letter-spacing:.7px; }
+    .sample-receipt .sample-column-labels > span:not(:first-child) { font-family:inherit; }
+    .sample-receipt .sample-item { padding:10px 0; border-bottom:1px dotted #bbb; break-inside:avoid; }
+    .sample-receipt .sample-item .sample-columns > span:first-child { font-weight:700; }
+    .sample-receipt .sample-amount { display:flex; justify-content:flex-end; align-items:baseline; gap:8px; margin-top:5px; }
+    .sample-receipt .sample-amount > span { font-size:8px; letter-spacing:1px; }
+    .sample-receipt .sample-amount > strong { font:700 13px "Courier New",monospace; }
+    .sample-receipt .sample-summary { display:flex; justify-content:space-between; flex-wrap:wrap; gap:5px 12px; font-size:10px; margin-bottom:6px; }
+    .sample-receipt .sample-total { display:flex; align-items:baseline; justify-content:space-between; font-size:12px; font-weight:700; gap:8px; padding:12px 0; border-top:2px solid #111; border-bottom:2px solid #111; margin:14px 0 8px; }
+    .sample-receipt .sample-total > span:last-child { font:700 25px/1.2 "Courier New",monospace; letter-spacing:-1px; overflow-wrap:anywhere; min-width:0; }
+    .sample-receipt .sample-extra { display:flex; justify-content:space-between; gap:8px; margin:5px 0; }
+    .sample-receipt .sample-extra > span:last-child { font-family:"Courier New",monospace; font-weight:700; }
+    .sample-receipt .sample-customer, .sample-receipt .sample-notes { margin-top:10px; overflow-wrap:anywhere; white-space:pre-wrap; }
+    .sample-receipt .sample-footer { text-align:center; margin-top:18px; }
+    .sample-receipt .sample-footer strong { display:block; font:700 19px Georgia,"Times New Roman",serif; letter-spacing:.3px; }
+    .sample-receipt .sample-footer span { display:block; margin-top:5px; font-size:8px; letter-spacing:2px; }
+    .sample-receipt .sample-roundoff { font-size:9px; text-align:right; }
+    @media print { .sample-receipt { max-width:none; } .sample-receipt .sample-rule, .sample-receipt .sample-item { border-color:#555; } }
   `;
 }
 
 function getShopHeaderMarkup() {
   return `<div class="shop-header">
-    <h3>${escapeHtml(RETAIL_SHOP_PROFILE.name)}</h3>
+    <h3>${escapeHtml(RETAIL_SHOP_PROFILE.name.replace(/ CHICKEN SHOP$/, ""))}</h3>
+    <div class="shop-category">CHICKEN SHOP</div>
     <p>${escapeHtml(RETAIL_SHOP_PROFILE.address)}</p>
     <p>MOB-${escapeHtml(RETAIL_SHOP_PROFILE.phone)}</p>
     <p class="shop-fssai">FSSAI LIC. NO. ${escapeHtml(RETAIL_SHOP_PROFILE.fssai)}</p>
@@ -2841,14 +2853,13 @@ function getRetailReceiptMarkup(bill) {
   const dateParts = String(bill.date || "").split("-");
   const date = dateParts.length === 3 ? `${dateParts[2]}/${dateParts[1]}/${dateParts[0].slice(-2)}` : bill.date;
   const weight = items.reduce((sum, item) => sum + Number(item.weight || 0), 0);
-  const pieces = items.filter(item => !Number(item.weight)).reduce((sum, item) => sum + Number(item.nag ?? item.quantity ?? 0), 0);
-  const quantity = `${weight.toFixed(3)}${pieces ? ` + ${formatBillNag(pieces)}PCS` : ""}`;
+  const nag = items.reduce((sum, item) => sum + Number(item.nag ?? item.quantity ?? 0), 0);
   const rows = items.map(item => {
     const kg = Number(item.weight || 0);
-    const qty = kg > 0 ? `${kg.toFixed(3)}Kg` : `${formatBillNag(item.nag ?? item.quantity)}PCS`;
+    const count = Number(item.nag ?? item.quantity ?? 0);
     return `<div class="sample-item"><div class="sample-columns">
-      <span>${escapeHtml(item.item_name)}</span><span>--</span><span>${qty}</span><span>${formatBillRate(item.rate)}</span>
-      </div><div class="sample-amount">${formatBillMoney(item.amount)}</div></div>`;
+      <span>${escapeHtml(item.item_name)}</span><span>${count > 0 ? formatBillNag(count) : "--"}</span><span>${kg > 0 ? kg.toFixed(3) : "--"}</span><span>${formatBillRate(item.rate)}</span>
+      </div><div class="sample-amount"><span>AMOUNT</span><strong>${formatBillMoney(item.amount)}</strong></div></div>`;
   }).join("");
   const extra = (label, value) => `<div class="sample-extra"><span>${label}</span><span>${value}</span></div>`;
   return `<style>${getSampleReceiptStyles()}</style><div class="thermal-bill sample-receipt">
@@ -2857,19 +2868,19 @@ function getRetailReceiptMarkup(bill) {
     ${bill.local_only ? '<div class="sample-notes"><strong>PROVISIONAL — PENDING SYNC</strong></div>' : ''}
     ${bill.customer_name ? `<div class="sample-customer">CUSTOMER: ${escapeHtml(bill.customer_name)}${bill.customer_phone ? `<br>${escapeHtml(bill.customer_phone)}` : ""}${bill.customer_address ? `<br>${escapeHtml(bill.customer_address)}` : ""}</div>` : ""}
     <hr class="sample-rule">
-    <div class="sample-columns"><span>ITEM NAME</span><span>T NUM</span><span>QTY</span><span>PRICE</span></div>
-    <div class="sample-amount">AMOUNT</div><hr class="sample-rule">
+    <div class="sample-columns sample-column-labels"><span>ITEM NAME</span><span>NAG</span><span>KG</span><span>PRICE</span></div>
     ${rows}
     <hr class="sample-rule">
-    <div class="sample-summary"><span>TOTAL ITEM(S):${items.length} /QTY:${quantity}</span><span>${formatBillMoney(bill.items_subtotal_amount ?? (Number(bill.total_amount || 0) - Number(bill.ice_amount || 0)))}</span></div>
+    <div class="sample-summary"><span>ITEMS: ${items.length}</span><span>NAG: ${nag > 0 ? formatBillNag(nag) : "--"}</span><span>WEIGHT: ${weight.toFixed(3)} KG</span></div>
+    ${extra("SUBTOTAL", formatBillMoney(bill.items_subtotal_amount ?? (Number(bill.total_amount || 0) - Number(bill.ice_amount || 0))))}
     ${Number(bill.ice_amount) > 0 ? extra("ICE", formatBillMoney(bill.ice_amount)) : ""}
-    <hr class="sample-rule"><div class="sample-total"><span>TOTAL</span><span>₹${formatBillMoney(bill.total_amount)}</span></div>
-    <hr class="sample-rule"><div class="sample-roundoff">TOTAL ROUNDOFF: 0.00</div>
+    <div class="sample-total"><span>TOTAL</span><span>₹${formatBillMoney(bill.total_amount)}</span></div>
+    <div class="sample-roundoff">TOTAL ROUNDOFF: 0.00</div>
     ${due > 0 || (bill.customer_name && balance !== 0) ? `<hr class="sample-rule">${extra("PAID", formatBillMoney(bill.paid_amount))}${extra("BILL DUE", formatBillMoney(due))}${extra("ACCOUNT BALANCE", formatBillMoney(balance))}` : ""}
     ${bill.payment_mode && !["CASH", "CREDIT"].includes(bill.payment_mode.toUpperCase()) ? extra("PAYMENT", escapeHtml(bill.payment_mode)) : ""}
     ${bill.notes ? `<div class="sample-notes">${escapeHtml(bill.notes)}</div>` : ""}
     ${RETAIL_PAYMENT_QR_VIEW.imageSrc && RETAIL_PAYMENT_QR_VIEW.upiId ? `<div class="thermal-payment-qr"><strong>${escapeHtml(RETAIL_PAYMENT_QR_VIEW.label)}</strong><img src="${escapeHtml(RETAIL_PAYMENT_QR_VIEW.imageSrc)}" alt="Payment QR" width="140"><p>${escapeHtml(RETAIL_PAYMENT_QR_VIEW.upiId)}</p></div>` : ""}
-    <hr class="sample-rule"><div class="sample-footer">THANK YOU VISIT AGAIN</div>
+    <hr class="sample-rule"><div class="sample-footer"><strong>Thank you.</strong><span>WE LOOK FORWARD TO YOUR NEXT VISIT</span></div>
   </div>`;
 }
 

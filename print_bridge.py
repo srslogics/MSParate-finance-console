@@ -173,17 +173,24 @@ def label_value(label: str, value: Any, width: int = CHARS_PER_LINE) -> str:
 
 def retail_item_lines(item: dict, index: int):
     kg = float(item.get("weight") or 0)
-    qty = f"{decimal3(kg)}Kg" if kg > 0 else f"{integerish(item.get('nag', item.get('quantity')))}PCS"
+    count = float(item.get("nag", item.get("quantity")) or 0)
+    nag = integerish(count) if count > 0 else "--"
+    weight = decimal3(kg) if kg > 0 else "--"
     name_lines = wrap_text(item.get("item_name") or "", 16)
-    lines = [f"{name_lines[0]:<16} {'--':>5} {qty:>9} {money(item.get('rate')):>9}"]
+    lines = [f"{name_lines[0]:<16} {nag:>4} {weight:>8} {money(item.get('rate')):>11}"]
     lines.extend(name_lines[1:])
-    lines.append(money(item.get("amount")).center(20).rstrip())
+    lines.append(lr("  AMOUNT", money(item.get("amount"))))
     return lines
 
 
 def shop_header(shop: dict) -> bytes:
     out = bytearray(esc_align("center"))
-    out += esc_bold(True) + encode_line(str(shop.get("name") or "Shop")) + esc_bold(False)
+    name = str(shop.get("name") or "Shop")
+    if name.endswith(" CHICKEN SHOP"):
+        out += esc_bold(True) + esc_double(True) + encode_line(name.removesuffix(" CHICKEN SHOP")) + esc_double(False) + esc_bold(False)
+        out += encode_line("C H I C K E N   S H O P") + esc_feed(1)
+    else:
+        out += esc_bold(True) + encode_line(name) + esc_bold(False)
     for line in [shop.get("proprietor"), shop.get("address"), f"MOB-{shop.get('phone')}" if shop.get("phone") else "", f"FSSAI LIC. NO. {shop.get('fssai')}" if shop.get("fssai") else ""]:
         if line:
             for part in wrap_text(str(line), CHARS_PER_LINE):
@@ -211,21 +218,21 @@ def build_retail_bytes(payload: dict) -> bytes:
             for part in wrap_text(f"{label}: {bill[key]}", CHARS_PER_LINE):
                 out += encode_line(part)
     out += encode_line(hr())
-    out += encode_line(f"{'ITEM NAME':<16} {'T NUM':>5} {'QTY':>9} {'PRICE':>9}")
-    out += encode_line("AMOUNT".center(20).rstrip()) + encode_line(hr())
+    out += esc_bold(True) + encode_line(f"{'ITEM NAME':<16} {'NAG':>4} {'KG':>8} {'PRICE':>11}") + esc_bold(False)
+    out += encode_line(hr())
     for idx, item in enumerate(items, 1):
         for line in retail_item_lines(item, idx):
             out += encode_line(line)
     weight = sum(float(item.get("weight") or 0) for item in items)
-    pieces = sum(float(item.get("nag", item.get("quantity")) or 0) for item in items if not float(item.get("weight") or 0))
-    qty = decimal3(weight) + (f" + {integerish(pieces)}PCS" if pieces else "")
+    nag = sum(float(item.get("nag", item.get("quantity")) or 0) for item in items)
     out += encode_line(hr())
     # Separate summary lines keep long quantities/totals intact on a 42-column roll.
-    out += encode_line(f"TOTAL ITEM(S):{len(items)} /QTY:{qty}")
+    out += encode_line(lr(f"ITEMS: {len(items)}", f"NAG: {integerish(nag) if nag > 0 else '--'}"))
+    out += encode_line(lr("WEIGHT", f"{decimal3(weight)} KG"))
     subtotal = bill.get("items_subtotal_amount")
     if subtotal is None:
         subtotal = float(bill.get("total_amount") or 0) - float(bill.get("ice_amount") or 0)
-    out += encode_line(lr("", money(subtotal)))
+    out += encode_line(lr("SUBTOTAL", money(subtotal)))
     if float(bill.get("ice_amount") or 0) > 0:
         out += encode_line(lr("ICE", money(bill.get("ice_amount"))))
     out += encode_line(hr())
@@ -242,7 +249,8 @@ def build_retail_bytes(payload: dict) -> bytes:
         for line in wrap_text(str(bill["notes"]), CHARS_PER_LINE):
             out += encode_line(line)
     out += payment_qr_block() + encode_line(hr())
-    out += center("THANK YOU VISIT AGAIN") + esc_feed(4) + esc_cut()
+    out += esc_feed(1) + esc_bold(True) + center("THANK YOU") + esc_bold(False)
+    out += center("WE LOOK FORWARD TO YOUR NEXT VISIT") + esc_feed(4) + esc_cut()
     return bytes(out)
 
 
