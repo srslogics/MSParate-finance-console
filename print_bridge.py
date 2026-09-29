@@ -175,11 +175,16 @@ def retail_item_lines(item: dict, index: int):
     kg = float(item.get("weight") or 0)
     count = float(item.get("nag", item.get("quantity")) or 0)
     nag = integerish(count) if count > 0 else "--"
-    weight = decimal3(kg) if kg > 0 else "--"
-    name_lines = wrap_text(item.get("item_name") or "", 16)
-    lines = [f"{name_lines[0]:<16} {nag:>4} {weight:>8} {money(item.get('rate')):>11}"]
+    name_lines = wrap_text(item.get("item_name") or "", 27)
+    lines = [lr(name_lines[0], money(item.get("amount")))]
     lines.extend(name_lines[1:])
-    lines.append(lr("  AMOUNT", money(item.get("amount"))))
+    rate_unit = "KG" if kg > 0 or item.get("unit") == "KGS" else "PC"
+    details = [f"NAG: {nag}"]
+    if kg > 0:
+        details.append(f"{decimal3(kg)} KG")
+    details.append(f"RATE {money(item.get('rate'))}/{rate_unit}")
+    lines.extend(wrap_text("  ".join(details), CHARS_PER_LINE))
+
     return lines
 
 
@@ -218,11 +223,13 @@ def build_retail_bytes(payload: dict) -> bytes:
             for part in wrap_text(f"{label}: {bill[key]}", CHARS_PER_LINE):
                 out += encode_line(part)
     out += encode_line(hr())
-    out += esc_bold(True) + encode_line(f"{'ITEM NAME':<16} {'NAG':>4} {'KG':>8} {'PRICE':>11}") + esc_bold(False)
+    out += esc_bold(True) + encode_line(lr("ITEM", "AMOUNT (Rs.)")) + esc_bold(False)
     out += encode_line(hr())
     for idx, item in enumerate(items, 1):
-        for line in retail_item_lines(item, idx):
-            out += encode_line(line)
+        for position, line in enumerate(retail_item_lines(item, idx)):
+            out += esc_bold(position == 0) + encode_line(line) + esc_bold(False)
+        if idx < len(items):
+            out += esc_feed(1)
     weight = sum(float(item.get("weight") or 0) for item in items)
     nag = sum(float(item.get("nag", item.get("quantity")) or 0) for item in items)
     out += encode_line(hr())
@@ -232,8 +239,8 @@ def build_retail_bytes(payload: dict) -> bytes:
     subtotal = bill.get("items_subtotal_amount")
     if subtotal is None:
         subtotal = float(bill.get("total_amount") or 0) - float(bill.get("ice_amount") or 0)
-    out += encode_line(lr("SUBTOTAL", money(subtotal)))
     if float(bill.get("ice_amount") or 0) > 0:
+        out += encode_line(lr("SUBTOTAL", money(subtotal)))
         out += encode_line(lr("ICE", money(bill.get("ice_amount"))))
     out += encode_line(hr())
     # Rs. works on legacy CP437 printers, which cannot encode the rupee symbol.

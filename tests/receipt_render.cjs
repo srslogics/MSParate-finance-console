@@ -8,7 +8,7 @@ const fs=require('fs');const path=require('path');const assert=require('node:ass
  await page.addScriptTag({content:'function escapeHtml(value){return String(value??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll("\\\"","&quot;");}'});
  await page.addScriptTag({path:path.resolve('frontend/js/retail.js')});
  const html=await page.evaluate(()=>{
-  const bill={bill_number:'TEST',date:'2026-09-29',time:'16:16:00',payment_mode:'Cash',items:[{item_name:'LIVER POT',line_type:'DRESSED',weight:.1,rate:100,amount:10}],total_amount:10,paid_amount:10};
+  const bill={bill_number:'TEST',date:'2026-09-29',time:'16:16:00',payment_mode:'Cash',items:[{item_name:'Chicken — regular',nag:1,weight:4,rate:44,amount:176},{item_name:'Chicken — dressed',nag:3,weight:55,rate:44,amount:2420}],total_amount:2596,paid_amount:2596};
   window.testBill=bill;return getRetailReceiptMarkup(bill);
  });
  await page.setContent(`<html><body style="margin:0;background:#eee;padding:16px">${html}</body></html>`);
