@@ -276,3 +276,19 @@ class PaymentReceipt(Base):
     __table_args__ = (
         UniqueConstraint("date", "outlet_id", "receipt_number", name="unique_payment_receipt_number_per_day"),
     )
+
+
+class DocumentRequest(Base):
+    """Durable deduplication, committed atomically with each bill/receipt."""
+    __tablename__ = "document_requests"
+    id = Column(String, primary_key=True)
+    payload_hash = Column(String, nullable=False)
+    document_id = Column(UUID(as_uuid=True), nullable=False)
+    created_at = Column(TIMESTAMP, server_default=func.now())
+
+
+class LoginLimit(Base):
+    __tablename__ = "login_limits"
+    id = Column(String, primary_key=True)
+    failures = Column(Integer, nullable=False, default=0)
+    window_start = Column(TIMESTAMP, nullable=False)

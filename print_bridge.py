@@ -1,13 +1,27 @@
 import os
 import json
+import textwrap
+from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import urlparse
 from typing import Any
 
 
 HOST = "127.0.0.1"
 PORT = 9876
 CHARS_PER_LINE = 42
+ALLOWED_ORIGINS = {"https://msparate-finance-console.onrender.com"} | {value.strip().rstrip("/") for value in os.getenv("PRINT_ALLOWED_ORIGINS", "").split(",") if value.strip()}
+
+
+def is_allowed_origin(origin):
+    if not origin:
+        return True  # Local non-browser clients; this service binds loopback only.
+    parsed = urlparse(origin)
+    return origin.rstrip("/") in ALLOWED_ORIGINS or (
+        parsed.scheme in ("http", "https") and parsed.hostname in ("localhost", "127.0.0.1", "::1")
+    )
+
 QR_IMAGE_PATH = Path(__file__).resolve().parent / "frontend" / "assets" / "payment-qr.png"
 QR_UPI_ID = os.getenv("PAYMENT_UPI_ID", "")
 
@@ -42,6 +56,8 @@ def esc_raster_image(image_bytes: bytes, width_bytes: int, height: int) -> bytes
 
 
 def encode_line(text: str) -> bytes:
+    # Do not let item names/notes inject ESC/POS commands into the printer.
+    text = "".join(c for c in str(text) if c.isprintable())
     return text.encode("cp437", errors="replace") + b"\n"
 
 
@@ -137,24 +153,7 @@ def payment_qr_block() -> bytes:
 
 
 def wrap_text(text: str, width: int):
-    text = str(text or "").strip()
-    if not text:
-        return [""]
-    words = text.split()
-    lines = []
-    current = ""
-    for word in words:
-        if not current:
-            current = word
-            continue
-        if len(current) + 1 + len(word) <= width:
-            current = f"{current} {word}"
-        else:
-            lines.append(current)
-            current = word
-    if current:
-        lines.append(current)
-    return lines or [""]
+    return textwrap.wrap(str(text or ""), width=width, break_long_words=True, break_on_hyphens=False) or [""]
 
 
 def lr(left: str, right: str, width: int = CHARS_PER_LINE) -> str:
@@ -173,113 +172,77 @@ def label_value(label: str, value: Any, width: int = CHARS_PER_LINE) -> str:
 
 
 def retail_item_lines(item: dict, index: int):
-    line_type = str(item.get("line_type") or "STANDARD").upper()
-    if line_type == "DRESSED":
-        item_width, kgs_width, rate_width, amount_width = 19, 5, 6, 8
-        name_lines = wrap_text(item.get("item_name") or "", item_width)
-        lines = []
-        first = name_lines[0]
-        lines.append(
-            f"{str(index).rjust(2)} "
-            f"{first.ljust(item_width)} "
-            f"{decimal3(item.get('weight')).rjust(kgs_width)} "
-            f"{money(item.get('rate')).rjust(rate_width)} "
-            f"{money(item.get('amount')).rjust(amount_width)}"
-        )
-        for cont in name_lines[1:]:
-            lines.append(f"   {cont}")
-        return lines
-
-    item_width, nag_width, kgs_width, rate_width, amount_width = 12, 3, 6, 5, 8
-    name_lines = wrap_text(item.get("item_name") or "", item_width)
-    lines = []
-    first = name_lines[0]
-    lines.append(
-        f"{str(index).rjust(2)} "
-        f"{first.ljust(item_width)} "
-        f"{integerish(item.get('nag')).rjust(nag_width)} "
-        f"{decimal3(item.get('weight')).rjust(kgs_width)} "
-        f"{money(item.get('rate')).rjust(rate_width)} "
-        f"{money(item.get('amount')).rjust(amount_width)}"
-    )
-    for cont in name_lines[1:]:
-        lines.append(f"   {cont}")
+    kg = float(item.get("weight") or 0)
+    qty = f"{decimal3(kg)}Kg" if kg > 0 else f"{integerish(item.get('nag', item.get('quantity')))}PCS"
+    name_lines = wrap_text(item.get("item_name") or "", 16)
+    lines = [f"{name_lines[0]:<16} {'--':>5} {qty:>9} {money(item.get('rate')):>9}"]
+    lines.extend(name_lines[1:])
+    lines.append(money(item.get("amount")).center(20).rstrip())
     return lines
+
+
+def shop_header(shop: dict) -> bytes:
+    out = bytearray(esc_align("center"))
+    out += esc_bold(True) + encode_line(str(shop.get("name") or "Shop")) + esc_bold(False)
+    for line in [shop.get("proprietor"), shop.get("address"), f"MOB-{shop.get('phone')}" if shop.get("phone") else "", f"FSSAI LIC. NO. {shop.get('fssai')}" if shop.get("fssai") else ""]:
+        if line:
+            for part in wrap_text(str(line), CHARS_PER_LINE):
+                out += encode_line(part)
+    return bytes(out) + esc_align("left")
 
 
 def build_retail_bytes(payload: dict) -> bytes:
     shop = payload.get("shop") or {}
     bill = payload.get("bill") or {}
     items = bill.get("items") or []
-    is_dressed_only = bool(items) and all(str(i.get("line_type") or "STANDARD").upper() == "DRESSED" for i in items)
-    outstanding_amount = float(bill.get("outstanding_amount") or 0)
-    running_balance = float(bill.get("running_balance") or outstanding_amount)
-    previous_balance = max(0.0, running_balance - outstanding_amount)
-    invoice_type = "Credit" if outstanding_amount > 0 else "Cash"
-
-    out = bytearray()
-    out += esc_init()
-    out += esc_align("center")
-    out += esc_bold(True) + esc_double(True) + encode_line(str(shop.get("name") or "Shop")) + esc_double(False) + esc_bold(False)
-    for line in [shop.get("proprietor"), shop.get("address"), f"Mob. {shop.get('phone') or ''}"]:
-        if line:
-            out += encode_line(str(line))
-    out += esc_align("left")
+    due = float(bill.get("outstanding_amount") or 0)
+    balance = float(bill.get("running_balance") if bill.get("running_balance") is not None else due)
+    try:
+        bill_date = date.fromisoformat(str(bill.get("date"))).strftime("%d/%m/%y")
+    except ValueError:
+        bill_date = str(bill.get("date") or "")
+    out = bytearray(esc_init() + shop_header(shop) + esc_feed(2))
+    out += encode_line(lr(f"BILL NO : {bill.get('bill_number') or ''}", f"DATE: {bill_date}"))
+    out += encode_line(lr("", f"TIME: {str(bill.get('time') or '')[:5]}"))
+    if bill.get("local_only"):
+        out += encode_line("PROVISIONAL - PENDING SYNC")
+    for key, label in [("customer_name", "CUSTOMER"), ("customer_phone", "PHONE"), ("customer_address", "ADDRESS")]:
+        if bill.get(key):
+            for part in wrap_text(f"{label}: {bill[key]}", CHARS_PER_LINE):
+                out += encode_line(part)
     out += encode_line(hr())
-    out += center("TAX INVOICE")
-    out += encode_line(lr(f"Invoice No: {bill.get('bill_number') or ''}", f"Type: {invoice_type}"))
-    out += encode_line(lr("Date", f"{bill.get('date') or ''} {bill.get('time') or ''}".strip()))
-    out += encode_line(label_value("Cashier", bill.get("cashier_name") or "admin"))
-
-    if bill.get("customer_name"):
-      out += encode_line(label_value("Customer", bill.get("customer_name")))
-    if bill.get("customer_phone"):
-      out += encode_line(label_value("Mobile No", bill.get("customer_phone")))
-    if bill.get("customer_address"):
-      out += encode_line(label_value("Address", bill.get("customer_address")))
-
-    out += encode_line(hr())
-    if is_dressed_only:
-        out += encode_line("Sl Item Name             KGS   Rate  Amount")
-    else:
-        out += encode_line("Sl Item Name      Nag    KGS  Rate   Amount")
-    out += encode_line(hr())
-
-    for idx, item in enumerate(items, start=1):
+    out += encode_line(f"{'ITEM NAME':<16} {'T NUM':>5} {'QTY':>9} {'PRICE':>9}")
+    out += encode_line("AMOUNT".center(20).rstrip()) + encode_line(hr())
+    for idx, item in enumerate(items, 1):
         for line in retail_item_lines(item, idx):
             out += encode_line(line)
-
+    weight = sum(float(item.get("weight") or 0) for item in items)
+    pieces = sum(float(item.get("nag", item.get("quantity")) or 0) for item in items if not float(item.get("weight") or 0))
+    qty = decimal3(weight) + (f" + {integerish(pieces)}PCS" if pieces else "")
     out += encode_line(hr())
-    if is_dressed_only:
-        out += esc_bold(True) + encode_line(
-            lr("Total", f"{decimal3(bill.get('total_weight'))} {compact_money(bill.get('total_amount'))}".rjust(20))
-        ) + esc_bold(False)
-    else:
-        out += esc_bold(True) + encode_line(
-            f"{'Total':<15}{integerish(bill.get('total_nag')).rjust(4)} {decimal3(bill.get('total_weight')).rjust(8)} {compact_money(bill.get('total_amount')).rjust(11)}"
-        ) + esc_bold(False)
-
+    # Separate summary lines keep long quantities/totals intact on a 42-column roll.
+    out += encode_line(f"TOTAL ITEM(S):{len(items)} /QTY:{qty}")
+    subtotal = bill.get("items_subtotal_amount")
+    if subtotal is None:
+        subtotal = float(bill.get("total_amount") or 0) - float(bill.get("ice_amount") or 0)
+    out += encode_line(lr("", money(subtotal)))
     if float(bill.get("ice_amount") or 0) > 0:
-        out += encode_line(lr("Items Total", compact_money(bill.get("items_subtotal_amount") or bill.get("total_amount"))))
-        out += encode_line(lr("Ice Amount", compact_money(bill.get("ice_amount"))))
-        out += esc_bold(True) + encode_line(lr("Total Bill", compact_money(bill.get("total_amount")))) + esc_bold(False)
-
+        out += encode_line(lr("ICE", money(bill.get("ice_amount"))))
     out += encode_line(hr())
-    out += encode_line(lr("Previous Balance", compact_money(previous_balance)))
-    out += encode_line(lr(f"{bill.get('payment_mode') or 'Cash'} Payment", compact_money(bill.get("paid_amount"))))
-    out += esc_bold(True) + encode_line(lr("New Balance", compact_money(running_balance))) + esc_bold(False)
-    if bill.get("notes"):
+    # Rs. works on legacy CP437 printers, which cannot encode the rupee symbol.
+    out += esc_bold(True) + encode_line(lr("TOTAL", f"Rs.{money(bill.get('total_amount'))}")) + esc_bold(False)
+    out += encode_line(hr()) + encode_line("TOTAL ROUNDOFF: 0.00")
+    if due > 0 or (bill.get("customer_name") and balance != 0):
         out += encode_line(hr())
-        for line in wrap_text(str(bill.get("notes")), CHARS_PER_LINE):
+        for label, value in [("PAID", bill.get("paid_amount")), ("BILL DUE", due), ("ACCOUNT BALANCE", balance)]:
+            out += encode_line(lr(label, money(value)))
+    if str(bill.get("payment_mode") or "Cash").upper() not in ("CASH", "CREDIT"):
+        out += encode_line(lr("PAYMENT", str(bill.get("payment_mode"))))
+    if bill.get("notes"):
+        for line in wrap_text(str(bill["notes"]), CHARS_PER_LINE):
             out += encode_line(line)
-
-    out += payment_qr_block()
-    out += encode_line(hr())
-    out += center(f"Created By: {bill.get('cashier_name') or 'admin'}")
-    out += center("Thank You")
-    out += center("Visit Again")
-    out += esc_feed(4)
-    out += esc_cut()
+    out += payment_qr_block() + encode_line(hr())
+    out += center("THANK YOU VISIT AGAIN") + esc_feed(4) + esc_cut()
     return bytes(out)
 
 
@@ -293,10 +256,7 @@ def build_payment_receipt_bytes(payload: dict) -> bytes:
     out = bytearray()
     out += esc_init()
     out += center(title)
-    out += esc_bold(True) + esc_double(True) + center(str(shop.get("name") or "Shop")) + esc_double(False) + esc_bold(False)
-    for line in [shop.get("proprietor"), shop.get("address"), f"Mob. {shop.get('phone') or ''}"]:
-        if line:
-            out += center(str(line))
+    out += shop_header(shop)
     out += encode_line(hr())
     out += encode_line(lr("Receipt no", str(receipt.get("receipt_number") or "")))
     out += encode_line(lr("Date", str(receipt.get("date") or "")))
@@ -357,7 +317,10 @@ class Handler(BaseHTTPRequestHandler):
         return
 
     def _cors(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
+        origin = self.headers.get("Origin", "")
+        if origin and is_allowed_origin(origin):
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
@@ -373,6 +336,8 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.flush()
 
     def do_OPTIONS(self):
+        if not is_allowed_origin(self.headers.get("Origin", "")):
+            return self._json(403, {"error": "Origin not allowed. Add your MSParte URL to PRINT_ALLOWED_ORIGINS."})
         try:
             self.send_response(204)
             self._cors()
@@ -383,6 +348,8 @@ class Handler(BaseHTTPRequestHandler):
             return
 
     def do_GET(self):
+        if not is_allowed_origin(self.headers.get("Origin", "")):
+            return self._json(403, {"error": "Origin not allowed. Add your MSParte URL to PRINT_ALLOWED_ORIGINS."})
         try:
             if self.path == "/health":
                 return self._json(200, {"status": "ok"})
@@ -400,8 +367,12 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
     def do_POST(self):
+        if not is_allowed_origin(self.headers.get("Origin", "")):
+            return self._json(403, {"error": "Origin not allowed. Add your MSParte URL to PRINT_ALLOWED_ORIGINS."})
         try:
             content_length = int(self.headers.get("Content-Length", "0") or 0)
+            if content_length < 0 or content_length > 1024 * 1024:
+                return self._json(413, {"error": "Print job must be 1 MB or smaller"})
             raw_body = self.rfile.read(content_length) if content_length else b"{}"
             payload = json.loads(raw_body.decode("utf-8"))
         except Exception:

@@ -1,10 +1,35 @@
-const RETAIL_SHOP_PROFILE = {name: "MSParte", proprietor: "", address: "", phone: ""};
+// Shop details supplied and approved by the owner for printed bills.
+const RETAIL_SHOP_PROFILE = {
+  name: "M. S. PARTE CHICKEN SHOP",
+  proprietor: "",
+  address: "GURUKRUPA COMPX. BHIM CHOWK JARIPATKA NGP.14",
+  phone: "7385086750-8805761675",
+  fssai: "11523078000376"
+};
 
 const RETAIL_PAYMENT_QR_VIEW = {label: "Scan & Pay", imageSrc: "", upiId: ""};
 
 const RETAIL_PENDING_STORAGE_KEY = "finance_console.retail.pending";
 const RETAIL_BILL_HISTORY_PAGE_SIZE = 30;
 const LOCAL_PRINT_BRIDGE_URL = localStorage.getItem("finance_console.printBridgeUrl") || "http://127.0.0.1:9876";
+
+const documentRequestDrafts = {};
+let retailSavePromise = null;
+let paymentSavePromise = null;
+let retailSyncPromise = null;
+
+function attachDocumentRequest(kind, payload) {
+  const signature = JSON.stringify({...payload, time: undefined, request_id: undefined});
+  if (documentRequestDrafts[kind]?.signature !== signature) {
+    documentRequestDrafts[kind] = {signature, id: crypto.randomUUID(), payload: {...payload}};
+  }
+  return {...documentRequestDrafts[kind].payload, request_id: documentRequestDrafts[kind].id};
+}
+
+function pendingRetailStorageKey() {
+  const user = JSON.parse(localStorage.getItem("FINANCE_CONSOLE_AUTH_USER") || "{}");
+  return `${RETAIL_PENDING_STORAGE_KEY}.${user.id || "signed-out"}.${getSelectedOutletId() || "no-outlet"}`;
+}
 
 let retailItemSuggestTimer = null;
 let retailCustomerSuggestTimer = null;
@@ -61,6 +86,7 @@ function buildRetailBridgePayload(bill) {
     shop: RETAIL_SHOP_PROFILE,
     bill: {
       bill_number: bill.bill_number,
+      local_only: Boolean(bill.local_only),
       date: bill.date,
       time: bill.time || new Date().toLocaleTimeString("en-GB"),
       cashier_name: bill.cashier_name || "admin",
@@ -80,6 +106,7 @@ function buildRetailBridgePayload(bill) {
       items: (bill.items || []).map(item => ({
         item_name: item.item_name || "",
         line_type: item.line_type || "STANDARD",
+        unit: item.unit || "KGS",
         nag: Number(item.nag || item.quantity || 0),
         weight: Number(item.weight || 0),
         rate: Number(item.rate || 0),
@@ -124,7 +151,7 @@ function openRetailBrowserPrintWindow(bill) {
         <style>
           @page { size: 80mm auto; margin: 0; }
           body { margin: 0; font-family: "Courier New", monospace; background: white; color: #111; }
-          .bill { width: 76mm; margin: 0 auto; padding: 4mm 2.5mm 5mm; }
+          .bill { box-sizing: border-box; width: 80mm; max-width: 100%; margin: 0 auto; padding: 3mm 2mm 5mm; }
           .thermal-bill { width: 100%; color: #111; }
           .thermal-label, .thermal-header-mini, .thermal-rule, .thermal-note-mini { text-align: center; }
           .thermal-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
@@ -195,8 +222,10 @@ function openPaymentReceiptBrowserPrintWindow(receipt) {
         <style>
           @page { size: 80mm auto; margin: 0; }
           body { margin: 0; font-family: "Courier New", monospace; background: white; color: #111; }
-          .bill { width: 76mm; margin: 0 auto; padding: 4mm 2.5mm 5mm; }
+          .bill { box-sizing: border-box; width: 80mm; max-width: 100%; margin: 0 auto; padding: 3mm 2mm 5mm; }
           .thermal-section-row td { padding-top: 5px; font-weight: 700; border-top: 1px dashed #a8adb7; }
+        ${getThermalReceiptShareStyles()}
+          .thermal-bill { box-sizing:border-box; width:100%; padding:0; }
         </style>
       </head>
       <body>
@@ -1486,9 +1515,7 @@ function populateRetailFormFromBill(bill) {
   retailField(formMode, "cashier").value = bill.cashier_name || "admin";
   const totalAmount = Number(bill.total_amount || 0);
   const paidAmount = Number(bill.paid_amount || 0);
-  let settlementType = "partial";
-  if (paidAmount <= 0) settlementType = "credit";
-  else if (paidAmount >= totalAmount) settlementType = "paid";
+  const settlementType = bill.settlement_type || (paidAmount >= totalAmount ? "paid" : paidAmount <= 0 ? "credit" : "partial");
   retailField(formMode, "settlementType").value = settlementType;
   retailField(formMode, "paymentMode").value = bill.payment_mode || "Cash";
   retailField(formMode, "customerName").value = bill.customer_name || "";
@@ -1555,9 +1582,18 @@ function renderPaymentReceiptPreview(receipt, isDraft = false) {
   preview.innerHTML = getPaymentReceiptMarkup(receipt);
 }
 
-async function saveRetailBill(options = {}) {
+function saveRetailBill(options = {}) {
+  if (retailSavePromise) return retailSavePromise;
+  retailSavePromise = performSaveRetailBill(options).finally(() => { retailSavePromise = null; });
+  return retailSavePromise;
+}
+
+async function performSaveRetailBill(options = {}) {
   const { autoStartNext = false } = options;
   const draft = buildRetailBillFromForm(retailBillingMode);
+  if (currentRetailBill?.local_only) { showToast("Sync this offline bill before changing it"); return null; }
+  const isEditing = Boolean(currentRetailBill?.id);
+  let requestPayload;
 
   if (!draft.date) {
     showToast("Select bill date");
@@ -1575,14 +1611,13 @@ async function saveRetailBill(options = {}) {
   }
 
   try {
-    const isEditing = Boolean(currentRetailBill?.id && !String(currentRetailBill.id).startsWith("local-"));
     if (isEditing && typeof isOwner === "function" && !isOwner()) {
       showToast("Only owner can edit previous bills");
       return null;
     }
     const url = isEditing ? `/retail-bills/${currentRetailBill.id}` : "/retail-bills";
     const method = isEditing ? "PUT" : "POST";
-    const data = await apiCall(url, method, JSON.stringify({
+    requestPayload = attachDocumentRequest("bill", {
       date: draft.date,
       bill_number: draft.bill_number,
       cashier_name: draft.cashier_name,
@@ -1594,7 +1629,8 @@ async function saveRetailBill(options = {}) {
       ice_amount: draft.ice_amount,
       notes: draft.notes,
       items: draft.items
-    }), { "Content-Type": "application/json" });
+    });
+    const data = await apiCall(url, method, JSON.stringify(requestPayload), { "Content-Type": "application/json" });
 
     if (data.error) {
       showToast(data.error);
@@ -1617,14 +1653,16 @@ async function saveRetailBill(options = {}) {
     if (retailBillingMode === "dressed") {
       await loadDressedStock(true);
     }
+    const savedBill = currentRetailBill;
+    delete documentRequestDrafts.bill;
     if (autoStartNext) {
       startNextRetailBill();
     }
-    return currentRetailBill;
+    return savedBill;
   } catch (e) {
     console.error(e);
-    if (shouldQueueRetailOffline(e)) {
-      const offlineBill = queueRetailBillForSync(draft);
+    if (!isEditing && requestPayload && shouldQueueRetailOffline(e)) {
+      const offlineBill = queueRetailBillForSync({...draft, request_payload: requestPayload, request_id: requestPayload.request_id});
       currentRetailBill = offlineBill;
       retailDraftDirty = false;
       retailBillCompleted = true;
@@ -1641,7 +1679,7 @@ async function saveRetailBill(options = {}) {
       return offlineBill;
     }
 
-    showToast("Retail bill save failed");
+    showToast(e.message || "Retail bill save failed");
     return null;
   }
 }
@@ -1667,7 +1705,13 @@ function populatePaymentReceiptForm(receipt) {
   renderPaymentReceiptPreview(currentPaymentReceipt);
 }
 
-async function savePaymentReceipt(options = {}) {
+function savePaymentReceipt(options = {}) {
+  if (paymentSavePromise) return paymentSavePromise;
+  paymentSavePromise = performSavePaymentReceipt(options).finally(() => { paymentSavePromise = null; });
+  return paymentSavePromise;
+}
+
+async function performSavePaymentReceipt(options = {}) {
   const { autoStartNext = false } = options;
   const draft = buildPaymentReceiptFromForm();
 
@@ -1692,7 +1736,7 @@ async function savePaymentReceipt(options = {}) {
     }
     const url = isEditing ? `/payment-receipts/${currentPaymentReceipt.id}` : "/payment-receipts";
     const method = isEditing ? "PUT" : "POST";
-    const data = await apiCall(url, method, JSON.stringify(draft), { "Content-Type": "application/json" });
+    const data = await apiCall(url, method, JSON.stringify(attachDocumentRequest("receipt", draft)), { "Content-Type": "application/json" });
     if (data.error) {
       showToast(data.error);
       return null;
@@ -1711,13 +1755,15 @@ async function savePaymentReceipt(options = {}) {
       clearOperationalCaches();
     }
     await loadPaymentReceipts(true);
+    const savedReceipt = currentPaymentReceipt;
+    delete documentRequestDrafts.receipt;
     if (autoStartNext) {
       startNextPaymentReceipt();
     }
-    return currentPaymentReceipt;
+    return savedReceipt;
   } catch (e) {
     console.error(e);
-    showToast("Payment receipt save failed");
+    showToast(e.message || "Payment receipt save failed");
     return null;
   }
 }
@@ -2318,6 +2364,7 @@ async function sendCurrentPaymentReceipt() {
 }
 
 function resetPaymentReceiptForm() {
+  delete documentRequestDrafts.receipt;
   const paymentName = document.getElementById("paymentReceiptPartyName");
   const paymentPhone = document.getElementById("paymentReceiptPartyPhone");
   const paymentOldBalance = document.getElementById("paymentReceiptOldBalance");
@@ -2348,6 +2395,7 @@ function resetRetailForm() {
     showToast("Save or print this bill before starting a new one");
     return;
   }
+  delete documentRequestDrafts.bill;
 
   const regularRows = document.getElementById("retailRegularRows");
   const dressedRows = document.getElementById("retailDressedRows");
@@ -2613,7 +2661,7 @@ function formatBillMoney(value) {
 
 function getThermalReceiptShareStyles() {
   return `
-    body { margin: 0; padding: 0; font-family: "Courier New", monospace; background: #ffffff; color: #111111; }
+
     .thermal-bill { width: 280px; padding: 12px 10px 14px; background: #ffffff; color: #111111; font-family: "Courier New", monospace; }
     .thermal-label { font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-align: center; }
     .thermal-center { text-align: center; }
@@ -2692,19 +2740,22 @@ async function renderReceiptMarkupToPngFile(markup, filenameBase) {
   }
 
   const width = 320;
-  const height = 980;
+  const measure = document.createElement("div");
+  measure.style.cssText = "position:fixed;left:-10000px;top:0;width:320px;background:white";
+  measure.innerHTML = `<style>${styles}</style>${markup}`;
+  document.body.appendChild(measure);
+  const height = Math.ceil(measure.getBoundingClientRect().height) + 8;
+  measure.remove();
+  measure.style.cssText = `width:${width}px;background:#fff`;
+  const serializedMarkup = new XMLSerializer().serializeToString(measure);
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
       <foreignObject width="100%" height="100%">
-        <div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px;background:#ffffff;">
-          <style>${styles}</style>
-          ${markup}
-        </div>
+        ${serializedMarkup}
       </foreignObject>
     </svg>
   `;
-  const blob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
+  const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 
   try {
     const image = new Image();
@@ -2746,159 +2797,80 @@ function downloadFile(file) {
   setTimeout(() => URL.revokeObjectURL(url), 500);
 }
 
-function getRetailReceiptMarkup(bill) {
-  const isDressedOnlyBill = (bill.items || []).length > 0 && (bill.items || []).every(item => (item.line_type || "STANDARD").toUpperCase() === "DRESSED");
-  const receiptOutstanding = bill.customer_name
-    ? Number((bill.party_balance ?? bill.outstanding_amount) || 0)
-    : Number(bill.outstanding_amount || 0);
-  const previousBalance = Math.max(0, receiptOutstanding - Number(bill.outstanding_amount || 0));
-  const invoiceType = Number(bill.outstanding_amount || 0) > 0 ? "Credit" : "Cash";
-  const invoiceDateTime = `${formatDisplayDate(bill.date)} ${escapeHtml(bill.time || new Date().toLocaleTimeString("en-GB"))}`;
-
-  const renderReceiptRows = (items, sectionLabel, startIndex) => {
-    if (!items.length) return "";
-    const rows = items.map((item, index) => {
-      const lineType = (item.line_type || "STANDARD").toUpperCase();
-      const quantityText = lineType === "DRESSED" ? "" : formatBillNag(item.nag || item.quantity || 0);
-      const kgsText = Number(item.weight || 0).toFixed(3);
-      const rateText = formatBillRate(item.rate);
-      if (isDressedOnlyBill) {
-        return `
-          <tr>
-            <td>${startIndex + index + 1}</td>
-            <td>${escapeHtml(item.item_name)}</td>
-            <td>${kgsText}</td>
-            <td>${rateText}</td>
-            <td>${formatBillMoney(item.amount)}</td>
-          </tr>
-        `;
-      }
-      return `
-        <tr>
-          <td>${startIndex + index + 1}</td>
-          <td>${escapeHtml(item.item_name)}</td>
-          <td>${escapeHtml(quantityText)}</td>
-          <td>${kgsText}</td>
-          <td>${rateText}</td>
-          <td>${formatBillMoney(item.amount)}</td>
-        </tr>
-      `;
-    }).join("");
-    return `<tr class="thermal-section-row"><td colspan="6">${sectionLabel}</td></tr>${rows}`;
-  };
-
-  const regularItems = (bill.items || []).filter(item => (item.line_type || "STANDARD").toUpperCase() !== "DRESSED");
-  const dressedItems = (bill.items || []).filter(item => (item.line_type || "STANDARD").toUpperCase() === "DRESSED");
-  const itemsHtml = `
-    ${renderReceiptRows(regularItems, "Regular Chicken", 0)}
-    ${renderReceiptRows(dressedItems, "Dressed Chicken", regularItems.length)}
-  `;
-
-  const customerBlock = (bill.customer_name || bill.customer_phone || bill.customer_address) ? `
-    <div class="thermal-customer">
-      ${bill.customer_name ? `<p><strong>Customer</strong>: ${escapeHtml(bill.customer_name)}</p>` : ""}
-      ${bill.customer_phone ? `<p><strong>Mobile No</strong>: ${escapeHtml(bill.customer_phone)}</p>` : ""}
-      ${bill.customer_address ? `<p><strong>Address</strong>: ${escapeHtml(bill.customer_address)}</p>` : ""}
-    </div>
-  ` : "";
-
+function getSampleReceiptStyles() {
+  // Shared by on-screen preview, image export, and browser printing.
   return `
-    <div class="thermal-bill">
-      <div class="thermal-center">
-        <h3>${escapeHtml(RETAIL_SHOP_PROFILE.name)}</h3>
-        <p>${escapeHtml(RETAIL_SHOP_PROFILE.proprietor)}</p>
-        <p>${escapeHtml(RETAIL_SHOP_PROFILE.address)}</p>
-        <p>Mob. ${escapeHtml(RETAIL_SHOP_PROFILE.phone)}</p>
-      </div>
-      <div class="thermal-rule">----------------------------------------------</div>
-      <div class="thermal-header-mini thermal-header-title">TAX INVOICE</div>
-
-      <div class="thermal-meta-grid">
-        <div class="thermal-meta-row"><span><strong>Invoice No</strong>: ${escapeHtml(bill.bill_number)}</span><span><strong>Type</strong>: ${invoiceType}</span></div>
-        <div class="thermal-meta-row"><span><strong>Date</strong>: ${invoiceDateTime}</span><span></span></div>
-        <div class="thermal-meta-row"><span>Cashier</span><span>${escapeHtml(bill.cashier_name || "admin")}</span></div>
-      </div>
-
-      ${customerBlock}
-
-      <div class="thermal-rule">----------------------------------------------</div>
-      <table class="thermal-items-table${isDressedOnlyBill ? " thermal-items-table-dressed" : ""}">
-        <thead>
-          <tr>
-            ${isDressedOnlyBill
-              ? `
-                <th>Sl</th>
-                <th>Item Name</th>
-                <th>KGS</th>
-                <th>Rate</th>
-                <th>Amount</th>
-              `
-              : `
-                <th>Sl</th>
-                <th>Item Name</th>
-                <th>NAG</th>
-                <th>KGS</th>
-                <th>Rate</th>
-                <th>Amount</th>
-              `}
-          </tr>
-        </thead>
-        <tbody>${itemsHtml}</tbody>
-      </table>
-      <table class="thermal-items-table thermal-totals-table${isDressedOnlyBill ? " thermal-items-table-dressed" : ""}">
-        <tbody>
-          ${isDressedOnlyBill
-            ? `
-              <tr class="thermal-total-row">
-                <td></td>
-                <td><strong>Total</strong></td>
-                <td><strong>${Number(bill.total_weight || 0).toFixed(3)}</strong></td>
-                <td></td>
-                <td><strong>${formatBillMoney(bill.total_amount)}</strong></td>
-              </tr>
-            `
-            : `
-              <tr class="thermal-total-row">
-                <td></td>
-                <td><strong>Total</strong></td>
-                <td><strong>${formatBillNag(bill.total_nag || bill.total_quantity || 0)}</strong></td>
-                <td><strong>${Number(bill.total_weight || 0).toFixed(3)}</strong></td>
-                <td></td>
-                <td><strong>${formatBillMoney(bill.total_amount)}</strong></td>
-              </tr>
-            `}
-        </tbody>
-      </table>
-      <div class="thermal-summary${Number(bill.ice_amount || 0) <= 0 ? " thermal-summary-compact" : ""}">
-        <p><span>Subtotal</span><strong>${formatBillMoney(bill.items_subtotal_amount ?? (Number(bill.total_amount || 0) - Number(bill.ice_amount || 0)))}</strong></p>
-        ${Number(bill.ice_amount || 0) > 0 ? `<p><span>Items Total</span><strong>${formatBillMoney(bill.items_subtotal_amount ?? (Number(bill.total_amount || 0) - Number(bill.ice_amount || 0)))}</strong></p>` : ""}
-        ${Number(bill.ice_amount || 0) > 0 ? `<p><span>Ice Amount</span><strong>${formatBillMoney(bill.ice_amount)}</strong></p>` : ""}
-        <p class="thermal-total"><span>Total</span><strong>${formatBillMoney(bill.total_amount)}</strong></p>
-      </div>
-      <div class="thermal-rule">----------------------------------------------</div>
-      <div class="thermal-summary thermal-balance-summary">
-        <p><span>Old Balance</span><strong>${formatBillMoney(previousBalance)}</strong></p>
-        <p><span>${escapeHtml(bill.payment_mode || "Cash")} Payment</span><strong>${formatBillMoney(bill.paid_amount)}</strong></p>
-        <p><span>Active Balance</span><strong>${formatBillMoney(receiptOutstanding)}</strong></p>
-      </div>
-
-      ${bill.requires_customer && !bill.customer_name ? `<div class="thermal-notes">Known customer name is required when this bill has credit outstanding.</div>` : ""}
-      ${bill.notes ? `<div class="thermal-notes">${escapeHtml(bill.notes)}</div>` : ""}
-      ${RETAIL_PAYMENT_QR_VIEW.imageSrc && RETAIL_PAYMENT_QR_VIEW.upiId ? `<div class="thermal-payment-qr">
-        <strong>${escapeHtml(RETAIL_PAYMENT_QR_VIEW.label)}</strong>
-        <div class="thermal-payment-qr-frame">
-          <img src="${escapeHtml(RETAIL_PAYMENT_QR_VIEW.imageSrc)}" alt="Payment QR">
-        </div>
-        <p class="thermal-payment-qr-id">${escapeHtml(RETAIL_PAYMENT_QR_VIEW.upiId)}</p>
-      </div>` : ""}
-
-      <div class="thermal-footer">
-        <p>Created By: ${escapeHtml(bill.cashier_name || "admin")}</p>
-        <p>Thank You</p>
-        <p>Visit Again</p>
-      </div>
-    </div>
+    .thermal-bill.sample-receipt { box-sizing:border-box; width:100%; max-width:80mm; padding:12px 8px 16px; margin:0 auto; background:#fff; color:#000; font:12px/1.3 "Courier New",monospace; }
+    .sample-receipt * { box-sizing:border-box; color:#000; }
+    .sample-receipt .shop-header { text-align:center; margin-bottom:20px; }
+    .sample-receipt .shop-header h3 { font: bold 15px/1.2 "Courier New",monospace; margin:0 0 3px; }
+    .sample-receipt .shop-header p { font: bold 11px/1.25 "Courier New",monospace; margin:1px 0; overflow-wrap:anywhere; }
+    .sample-receipt .shop-header .shop-fssai { font-size:12px; }
+    .sample-receipt .sample-meta { display:flex; justify-content:space-between; align-items:end; gap:8px; }
+    .sample-receipt .sample-meta > span { min-width:0; overflow-wrap:anywhere; }
+    .sample-receipt .sample-meta > span:last-child { flex-shrink:0; }
+    .sample-receipt .sample-rule { border:0; border-top:1px dashed #000; margin:9px 0; }
+    .sample-receipt .sample-columns { display:grid; grid-template-columns:minmax(0,1fr) 36px 64px 64px; gap:3px; align-items:start; }
+    .sample-receipt .sample-columns > span { min-width:0; overflow-wrap:anywhere; }
+    .sample-receipt .sample-columns > span:not(:first-child) { text-align:right; }
+    .sample-receipt .sample-item { margin:8px 0; break-inside:avoid; }
+    .sample-receipt .sample-amount { width:42%; text-align:center; margin-top:2px; }
+    .sample-receipt .sample-summary { display:flex; justify-content:space-between; gap:8px; font-size:11px; }
+    .sample-receipt .sample-total { display:flex; justify-content:space-between; font-size:18px; font-weight:bold; gap:8px; }
+    .sample-receipt .sample-extra { display:flex; justify-content:space-between; gap:8px; margin:3px 0; }
+    .sample-receipt .sample-customer, .sample-receipt .sample-notes { margin-top:8px; overflow-wrap:anywhere; white-space:pre-wrap; }
+    .sample-receipt .sample-footer { text-align:center; font-size:15px; font-weight:bold; margin-top:12px; }
+    .sample-receipt .sample-roundoff { font-size:12px; }
+    @media print { .sample-receipt { max-width:none; } }
   `;
+}
+
+function getShopHeaderMarkup() {
+  return `<div class="shop-header">
+    <h3>${escapeHtml(RETAIL_SHOP_PROFILE.name)}</h3>
+    <p>${escapeHtml(RETAIL_SHOP_PROFILE.address)}</p>
+    <p>MOB-${escapeHtml(RETAIL_SHOP_PROFILE.phone)}</p>
+    <p class="shop-fssai">FSSAI LIC. NO. ${escapeHtml(RETAIL_SHOP_PROFILE.fssai)}</p>
+  </div>`;
+}
+
+function getRetailReceiptMarkup(bill) {
+  const items = bill.items || [];
+  const due = Number(bill.outstanding_amount || 0);
+  const balance = Number(bill.party_balance ?? due);
+  const dateParts = String(bill.date || "").split("-");
+  const date = dateParts.length === 3 ? `${dateParts[2]}/${dateParts[1]}/${dateParts[0].slice(-2)}` : bill.date;
+  const weight = items.reduce((sum, item) => sum + Number(item.weight || 0), 0);
+  const pieces = items.filter(item => !Number(item.weight)).reduce((sum, item) => sum + Number(item.nag ?? item.quantity ?? 0), 0);
+  const quantity = `${weight.toFixed(3)}${pieces ? ` + ${formatBillNag(pieces)}PCS` : ""}`;
+  const rows = items.map(item => {
+    const kg = Number(item.weight || 0);
+    const qty = kg > 0 ? `${kg.toFixed(3)}Kg` : `${formatBillNag(item.nag ?? item.quantity)}PCS`;
+    return `<div class="sample-item"><div class="sample-columns">
+      <span>${escapeHtml(item.item_name)}</span><span>--</span><span>${qty}</span><span>${formatBillRate(item.rate)}</span>
+      </div><div class="sample-amount">${formatBillMoney(item.amount)}</div></div>`;
+  }).join("");
+  const extra = (label, value) => `<div class="sample-extra"><span>${label}</span><span>${value}</span></div>`;
+  return `<style>${getSampleReceiptStyles()}</style><div class="thermal-bill sample-receipt">
+    ${getShopHeaderMarkup()}
+    <div class="sample-meta"><span>BILL NO : ${escapeHtml(bill.bill_number)}</span><span>DATE: ${escapeHtml(date)}<br>TIME: ${escapeHtml(String(bill.time || "").slice(0,5))}</span></div>
+    ${bill.local_only ? '<div class="sample-notes"><strong>PROVISIONAL — PENDING SYNC</strong></div>' : ''}
+    ${bill.customer_name ? `<div class="sample-customer">CUSTOMER: ${escapeHtml(bill.customer_name)}${bill.customer_phone ? `<br>${escapeHtml(bill.customer_phone)}` : ""}${bill.customer_address ? `<br>${escapeHtml(bill.customer_address)}` : ""}</div>` : ""}
+    <hr class="sample-rule">
+    <div class="sample-columns"><span>ITEM NAME</span><span>T NUM</span><span>QTY</span><span>PRICE</span></div>
+    <div class="sample-amount">AMOUNT</div><hr class="sample-rule">
+    ${rows}
+    <hr class="sample-rule">
+    <div class="sample-summary"><span>TOTAL ITEM(S):${items.length} /QTY:${quantity}</span><span>${formatBillMoney(bill.items_subtotal_amount ?? (Number(bill.total_amount || 0) - Number(bill.ice_amount || 0)))}</span></div>
+    ${Number(bill.ice_amount) > 0 ? extra("ICE", formatBillMoney(bill.ice_amount)) : ""}
+    <hr class="sample-rule"><div class="sample-total"><span>TOTAL</span><span>₹${formatBillMoney(bill.total_amount)}</span></div>
+    <hr class="sample-rule"><div class="sample-roundoff">TOTAL ROUNDOFF: 0.00</div>
+    ${due > 0 || (bill.customer_name && balance !== 0) ? `<hr class="sample-rule">${extra("PAID", formatBillMoney(bill.paid_amount))}${extra("BILL DUE", formatBillMoney(due))}${extra("ACCOUNT BALANCE", formatBillMoney(balance))}` : ""}
+    ${bill.payment_mode && !["CASH", "CREDIT"].includes(bill.payment_mode.toUpperCase()) ? extra("PAYMENT", escapeHtml(bill.payment_mode)) : ""}
+    ${bill.notes ? `<div class="sample-notes">${escapeHtml(bill.notes)}</div>` : ""}
+    ${RETAIL_PAYMENT_QR_VIEW.imageSrc && RETAIL_PAYMENT_QR_VIEW.upiId ? `<div class="thermal-payment-qr"><strong>${escapeHtml(RETAIL_PAYMENT_QR_VIEW.label)}</strong><img src="${escapeHtml(RETAIL_PAYMENT_QR_VIEW.imageSrc)}" alt="Payment QR" width="140"><p>${escapeHtml(RETAIL_PAYMENT_QR_VIEW.upiId)}</p></div>` : ""}
+    <hr class="sample-rule"><div class="sample-footer">THANK YOU VISIT AGAIN</div>
+  </div>`;
 }
 
 function getPaymentReceiptMarkup(receipt) {
@@ -2920,7 +2892,8 @@ function getPaymentReceiptMarkup(receipt) {
         <h3>${escapeHtml(RETAIL_SHOP_PROFILE.name)}</h3>
         <p>${escapeHtml(RETAIL_SHOP_PROFILE.proprietor)}</p>
         <p>${escapeHtml(RETAIL_SHOP_PROFILE.address)}</p>
-        <p>Mob. ${escapeHtml(RETAIL_SHOP_PROFILE.phone)}</p>
+        <p>MOB-${escapeHtml(RETAIL_SHOP_PROFILE.phone)}</p>
+        <p>FSSAI LIC. NO. ${escapeHtml(RETAIL_SHOP_PROFILE.fssai)}</p>
       </div>
 
       <div class="thermal-meta-grid">
@@ -2985,20 +2958,20 @@ function syncRetailLineUi(row) {
 
 function getPendingRetailBills() {
   try {
-    return JSON.parse(localStorage.getItem(RETAIL_PENDING_STORAGE_KEY) || "[]");
+    return JSON.parse(localStorage.getItem(pendingRetailStorageKey()) || "[]");
   } catch (e) {
     console.error("Failed to parse pending retail bills", e);
     return [];
   }
 }
 
-function setPendingRetailBills(bills) {
-  localStorage.setItem(RETAIL_PENDING_STORAGE_KEY, JSON.stringify(bills));
+function setPendingRetailBills(bills, key = pendingRetailStorageKey()) {
+  localStorage.setItem(key, JSON.stringify(bills));
 }
 
 function queueRetailBillForSync(draft) {
   const pendingBills = getPendingRetailBills();
-  const localId = `local-${Date.now()}`;
+  const localId = `local-${draft.request_id || crypto.randomUUID()}`;
   const offlineBill = {
     ...draft,
     id: localId,
@@ -3009,13 +2982,14 @@ function queueRetailBillForSync(draft) {
     last_error: "No internet connection"
   };
 
-  pendingBills.push(offlineBill);
+  if (!pendingBills.some(bill => bill.id === localId)) pendingBills.push(offlineBill);
   setPendingRetailBills(pendingBills);
   renderRetailOfflineBanner();
   return offlineBill;
 }
 
 function shouldQueueRetailOffline(error) {
+  if (error?.status) return false;
   if (!navigator.onLine) return true;
   const message = String(error?.message || error || "");
   return message.includes("Network") || message.includes("fetch");
@@ -3183,12 +3157,25 @@ async function findMatchingRemoteRetailBill(pendingBill) {
   return null;
 }
 
+function getLegacyOfflineBills() {
+  try {
+    const bills = JSON.parse(localStorage.getItem(RETAIL_PENDING_STORAGE_KEY) || "[]");
+    return Array.isArray(bills) ? bills : [];
+  } catch { return []; }
+}
+
+function downloadLegacyOfflineBills() {
+  if (typeof isOwner !== "function" || !isOwner()) return;
+  downloadFile(new File([JSON.stringify(getLegacyOfflineBills(), null, 2)], "older-offline-bills-review.json", {type:"application/json"}));
+}
+
 function renderRetailOfflineBanner() {
   const banner = document.getElementById("retailOfflineBanner");
   if (!banner) return;
 
   const pendingCount = getPendingRetailBills().length;
-  if (navigator.onLine && pendingCount === 0) {
+  const legacyCount = typeof isOwner === "function" && isOwner() ? getLegacyOfflineBills().length : 0;
+  if (navigator.onLine && pendingCount === 0 && legacyCount === 0) {
     banner.style.display = "none";
     banner.innerHTML = "";
     return;
@@ -3202,13 +3189,21 @@ function renderRetailOfflineBanner() {
   banner.style.display = "block";
   banner.innerHTML = `
     <strong>${statusText}</strong>
+    ${legacyCount ? `<p>${legacyCount} older offline bill(s) have no recorded outlet. They are preserved on this device and need owner review before re-entry to avoid duplicate or misplaced sales.</p><button type="button" onclick="downloadLegacyOfflineBills()">Download older bills for review</button>` : ""}
     <div class="offline-banner-actions">
       <button type="button" onclick="syncPendingRetailBills()">${navigator.onLine ? "Sync Now" : "Retry When Online"}</button>
     </div>
   `;
 }
 
-async function syncPendingRetailBills(silent = false) {
+function syncPendingRetailBills(silent = false) {
+  if (retailSyncPromise) return retailSyncPromise;
+  retailSyncPromise = performSyncPendingRetailBills(silent).finally(() => { retailSyncPromise = null; });
+  return retailSyncPromise;
+}
+
+async function performSyncPendingRetailBills(silent = false) {
+  const storageKey = pendingRetailStorageKey();
   if (!navigator.onLine) {
     renderRetailOfflineBanner();
     return;
@@ -3224,8 +3219,10 @@ async function syncPendingRetailBills(silent = false) {
   let syncedCount = 0;
 
   for (const bill of pendingBills) {
+    if (storageKey !== pendingRetailStorageKey()) { remaining.push(bill); continue; }
     try {
-      const response = await apiCall("/retail-bills", "POST", JSON.stringify({
+      const response = await apiCall("/retail-bills", "POST", JSON.stringify(bill.request_payload || {
+        request_id: bill.request_id || (bill.request_id = crypto.randomUUID()),
         date: bill.date,
         bill_number: bill.bill_number,
         cashier_name: bill.cashier_name,
@@ -3264,7 +3261,11 @@ async function syncPendingRetailBills(silent = false) {
     }
   }
 
-  setPendingRetailBills(remaining);
+  // Keep any new offline bill saved while this batch was in flight.
+  const latest = JSON.parse(localStorage.getItem(storageKey) || "[]");
+  const batchIds = new Set(pendingBills.map(bill => bill.id));
+  setPendingRetailBills([...remaining, ...latest.filter(bill => !batchIds.has(bill.id))], storageKey);
+  if (storageKey !== pendingRetailStorageKey()) return;
   renderRetailOfflineBanner();
   await loadRetailBills(true);
   await refreshRetailBillNumber();

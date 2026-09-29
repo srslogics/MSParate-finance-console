@@ -110,10 +110,21 @@ async function handleUpload(inputId, endpoint, label, preview = false) {
     handleUpload("openingStockFile", "/upload/opening-stock", "Opening stock file", true);
   }
 
-  function downloadTemplate(type) {
+  async function downloadTemplate(type) {
     showLoading("Preparing template...");
-    setTimeout(() => hideLoading(), 900);
-    window.location.href = `${BASE_URL}/templates/${type}`;
+    try {
+      const response = await fetchWithRetry(`${BASE_URL}/templates/${encodeURIComponent(type)}`, {
+        headers: { "X-Auth-Token": getAuthToken(), "X-Outlet-Id": getSelectedOutletId() }
+      });
+      if (response.status === 401) { clearAuthState(); throw new Error("Please sign in again"); }
+      if (!response.ok || response.headers.get("Content-Type")?.includes("application/json")) throw new Error("Template could not be downloaded");
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = url; link.download = `${type}_template.csv`;
+      document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) { showToast(error.message || "Template download failed"); }
+    finally { hideLoading(); }
   }
 
   async function processDay() {

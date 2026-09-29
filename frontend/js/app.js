@@ -259,6 +259,7 @@ async function bootAuth() {
     } catch (e) {
       const authMessage = String(e?.message || "");
       if (authMessage === "AUTH_REQUIRED" || authMessage.toLowerCase().includes("authentication required")) {
+        clearApiCache();
         localStorage.removeItem("FINANCE_CONSOLE_AUTH_TOKEN");
         localStorage.removeItem("FINANCE_CONSOLE_AUTH_USER");
         authNeedsSetup = false;
@@ -282,6 +283,7 @@ async function bootAuth() {
     }
 
     if (!me?.user) {
+      clearApiCache();
       localStorage.removeItem("FINANCE_CONSOLE_AUTH_TOKEN");
       localStorage.removeItem("FINANCE_CONSOLE_AUTH_USER");
       authNeedsSetup = false;
@@ -315,7 +317,9 @@ async function loginUser() {
     showToast("Enter username and password");
     return;
   }
-  const data = await apiCall("/auth/login", "POST", JSON.stringify({ username, password }), { "Content-Type": "application/json" });
+  let data;
+  try { data = await apiCall("/auth/login", "POST", JSON.stringify({ username, password }), { "Content-Type": "application/json" }); }
+  catch (error) { showToast(error.message || "Sign-in failed"); return; }
   if (data.error) {
     showToast(data.error);
     return;
@@ -357,6 +361,7 @@ async function handleAuthButton() {
     return;
   }
   await optionalApiCall("/auth/logout", { status: "ok" }, "POST", null, { cache: false });
+  clearApiCache();
   localStorage.removeItem("FINANCE_CONSOLE_AUTH_TOKEN");
   localStorage.removeItem("FINANCE_CONSOLE_AUTH_USER");
   localStorage.removeItem("FINANCE_CONSOLE_SELECTED_OUTLET_ID");

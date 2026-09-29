@@ -15,6 +15,7 @@ function getSelectedOutletId() {
 }
 
 function clearAuthState() {
+  clearApiCache();
   localStorage.removeItem("FINANCE_CONSOLE_AUTH_TOKEN");
   localStorage.removeItem("FINANCE_CONSOLE_AUTH_USER");
   localStorage.removeItem("FINANCE_CONSOLE_SELECTED_OUTLET_ID");
@@ -27,8 +28,13 @@ function clearApiCache() {
   responseCache.clear();
 }
 
+function responseCacheKey(url, method = "GET") {
+  return `${method}:${url}|scope:${getSelectedOutletId()}:${getAuthToken()}`;
+}
+
 function clearCachedResponse(url, method = "GET") {
-  responseCache.delete(`${method}:${url}`);
+  const prefix = `${method}:${url}|scope:`;
+  for (const key of responseCache.keys()) if (key.startsWith(prefix)) responseCache.delete(key);
 }
 
 function clearCachedResponsesByPrefix(prefix, method = "GET") {
@@ -43,7 +49,7 @@ function clearCachedResponsesByPrefix(prefix, method = "GET") {
 async function apiCall(url, method = "GET", body = null, headers = {}, apiOptions = {}) {
     const shouldShowLoader = apiOptions.loader === true || method !== "GET";
     const useCache = apiOptions.cache === true && method === "GET";
-    const cacheKey = `${method}:${url}`;
+    const cacheKey = responseCacheKey(url, method);
 
     if (useCache) {
       const cached = responseCache.get(cacheKey);
@@ -72,10 +78,17 @@ async function apiCall(url, method = "GET", body = null, headers = {}, apiOption
 
       if (body) {
         options.body = body;
+        if (method === "POST" && ["/retail-bills", "/payment-receipts"].includes(url)) {
+          const requestId = JSON.parse(body).request_id;
+          if (requestId) options.headers["Idempotency-Key"] = requestId;
+        }
       }
 
       const res = await fetchWithRetry(BASE_URL + url, options);
 
+      if (authToken !== getAuthToken() || selectedOutletId !== getSelectedOutletId()) {
+        throw new Error("Outlet or account changed while the request was running");
+      }
       if (res.status === 401) {
         let errorMessage = "AUTH_REQUIRED";
         try {
@@ -90,7 +103,10 @@ async function apiCall(url, method = "GET", body = null, headers = {}, apiOption
       }
 
       if (!res.ok) {
-        throw new Error(`API error: ${res.status}`);
+        const errorBody = await res.json().catch(() => ({}));
+        const error = new Error(typeof errorBody.detail === "string" ? errorBody.detail : errorBody.error || `API error: ${res.status}`);
+        error.status = res.status;
+        throw error;
       }
 
       const data = await res.json();
@@ -118,7 +134,10 @@ async function optionalApiCall(url, fallback, method = "GET", body = null, optio
   }
 }
 
-async function fetchWithRetry(url, options, attempts = 2) {
+async function fetchWithRetry(url, options = {}, attempts = 2) {
+  // A lost response does not mean a write failed. Retry only reads or deduplicated documents.
+  const method = String(options.method || "GET").toUpperCase();
+  if (!["GET", "HEAD", "OPTIONS"].includes(method) && !options.headers?.["Idempotency-Key"]) attempts = 0;
   let lastError;
 
   for (let attempt = 0; attempt <= attempts; attempt += 1) {
@@ -175,12 +194,17 @@ async function withLoading(message, callback) {
 }
 
 function getCachedResponse(url, method = "GET") {
-  const cached = responseCache.get(`${method}:${url}`);
+  const cached = responseCache.get(responseCacheKey(url, method));
   if (!cached || Date.now() - cached.time >= CACHE_TTL) return null;
   return cached.data;
 }
 
 function clearOperationalCaches() {
+  clearCachedResponsesByPrefix("/top-debtors");
+  clearCachedResponsesByPrefix("/top-payables");
+  clearCachedResponsesByPrefix("/party/profile");
+  clearCachedResponsesByPrefix("/party/detail");
+  clearCachedResponsesByPrefix("/party/ledger");
   clearCachedResponsesByPrefix("/dashboard?date=");
   clearCachedResponsesByPrefix("/inventory/by-item?date=");
   clearCachedResponsesByPrefix("/analytics/trend?");

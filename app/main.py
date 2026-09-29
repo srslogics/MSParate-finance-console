@@ -2,14 +2,15 @@ from app.web import is_frontend_path, mount_frontend
 from uuid import UUID, uuid4
 from io import BytesIO
 from urllib.parse import quote
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import hashlib
+import json
 import hmac
 import os
 import secrets
 
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, Request
 from app.db import engine, Base, IS_SUPABASE_DATABASE
 from fastapi import UploadFile, File, Depends, Body
 import pandas as pd
@@ -39,7 +40,7 @@ from app.finance import (
 )
 from sqlalchemy import case, func, text, or_, and_, exists, cast, String
 from sqlalchemy.exc import OperationalError
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 import uvicorn
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, JSONResponse
@@ -734,7 +735,12 @@ mount_frontend(app)
 
 @app.get("/healthz")
 def health_check():
-    return {"status": "ok"}
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return {"status": "ok"}
+    except Exception:
+        return JSONResponse(status_code=503, content={"status": "unavailable"})
 
 
 @app.head("/healthz")
@@ -750,6 +756,7 @@ def auth_setup_status(db: Session = Depends(get_db)):
 
 @app.post("/auth/setup-owner")
 def auth_setup_owner(payload: dict = Body(...), db: Session = Depends(get_db)):
+    db.execute(text("SELECT pg_advisory_xact_lock(4815162343)"))
     if db.query(models.User).count() > 0:
         return {"error": "Owner setup already completed"}
 
@@ -758,8 +765,8 @@ def auth_setup_owner(payload: dict = Body(...), db: Session = Depends(get_db)):
     display_name = str(payload.get("display_name") or username).strip()
     if len(username) < 3:
         return {"error": "Username must be at least 3 characters"}
-    if len(password) < 4:
-        return {"error": "Password must be at least 4 characters"}
+    if len(password) < 8:
+        return {"error": "Password must be at least 8 characters"}
 
     user = models.User(
         id=uuid4(),
@@ -779,15 +786,41 @@ def auth_setup_owner(payload: dict = Body(...), db: Session = Depends(get_db)):
 
 
 @app.post("/auth/login")
-def auth_login(payload: dict = Body(...), db: Session = Depends(get_db)):
+def auth_login(payload: dict = Body(...), db: Session = Depends(get_db), request: Request = None):
     username = str(payload.get("username") or "").strip()
     password = str(payload.get("password") or "")
+    now = datetime.utcnow()
+    identities = [("user:" + username.lower(), 10)]
+    if request and request.client:
+        identities.append(("ip:" + request.client.host, 40))
+    limits = []
+    # Fixed order prevents deadlocks when different usernames share an address.
+    for identity, maximum in sorted(identities):
+        key = hashlib.sha256(identity.encode()).hexdigest()
+        lock = int.from_bytes(bytes.fromhex(key)[:8], "big", signed=True)
+        db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock})
+        limit = db.get(models.LoginLimit, key)
+        if not limit:
+            limit = models.LoginLimit(id=key, failures=0, window_start=now)
+            db.add(limit)
+        if limit.window_start < now - timedelta(minutes=15):
+            limit.failures = 0
+            limit.window_start = now
+        if limit.failures >= maximum:
+            return JSONResponse(status_code=429, content={"error": "Too many failed sign-in attempts. Try again in 15 minutes."}, headers={"Retry-After": "900"})
+        limits.append((identity, limit))
     user = db.query(models.User).filter(func.lower(models.User.username) == username.lower()).first()
     if not user or not verify_password(password, user.password_hash):
+        for _, limit in limits:
+            limit.failures += 1
+        db.commit()
         return {"error": "Invalid username or password"}
     if str(user.is_active or "true").lower() != "true":
         return {"error": "User is inactive"}
 
+    for identity, limit in limits:
+        if identity.startswith("user:"):
+            limit.failures = 0
     session = create_user_session(db, user)
     db.commit()
     return {"user": serialize_user(user, db), "token": session.token}
@@ -827,8 +860,8 @@ def auth_create_user(payload: dict = Body(...), db: Session = Depends(get_db), u
 
     if len(username) < 3:
         return {"error": "Username must be at least 3 characters"}
-    if len(password) < 4:
-        return {"error": "Password must be at least 4 characters"}
+    if len(password) < 8:
+        return {"error": "Password must be at least 8 characters"}
     if role not in [ROLE_OWNER, ROLE_STAFF]:
         return {"error": "Role must be OWNER or STAFF"}
     existing = db.query(models.User).filter(func.lower(models.User.username) == username.lower()).first()
@@ -968,7 +1001,7 @@ def save_retail_shortcut(
         db.refresh(shortcut)
     except Exception as e:
         db.rollback()
-        return {"error": "Saving shortcut failed", "details": str(e)}
+        return {"error": "Saving shortcut failed"}
 
     return {
         "status": "success",
@@ -1001,7 +1034,7 @@ def delete_retail_shortcut(
         db.commit()
     except Exception as e:
         db.rollback()
-        return {"error": "Deleting shortcut failed", "details": str(e)}
+        return {"error": "Deleting shortcut failed"}
 
     return {"status": "success"}
 
@@ -1060,7 +1093,8 @@ def normalize_party_name(name: str) -> str:
 
 def parse_input_date(value: str):
     try:
-        return pd.to_datetime(value).date()
+        result = pd.to_datetime(value)
+        return None if pd.isna(result) else result.date()
     except Exception:
         return None
 
@@ -1573,6 +1607,7 @@ def report_response(rows, columns, filename, file_format, title, meta_rows=None)
         current_row = 2
         for meta in meta_rows or []:
             meta_cell = sheet.cell(row=current_row, column=1, value=meta)
+            meta_cell.data_type = "s"
             meta_cell.font = Font(bold=True)
             meta_cell.fill = meta_fill
             meta_cell.alignment = Alignment(horizontal="left", vertical="center")
@@ -1600,6 +1635,8 @@ def report_response(rows, columns, filename, file_format, title, meta_rows=None)
             for col_index, column in enumerate(columns, start=1):
                 raw_value = row.get(column, "")
                 cell = sheet.cell(row=row_index, column=col_index, value=raw_value)
+                if isinstance(raw_value, str):
+                    cell.data_type = "s"  # Customer/item text must never become an Excel formula.
                 cell.border = summary_border if is_summary_row else thin_border
                 if is_summary_row:
                     cell.font = Font(bold=True)
@@ -2139,11 +2176,46 @@ def format_performance_row(item, purchase_kg=0, sales_kg=0, buy_rate=0, sell_rat
 def parse_decimal(value, default="0"):
     if value in [None, ""]:
         return Decimal(default)
-
     try:
-        return Decimal(str(value).strip())
+        result = Decimal(str(value).strip())
+        if not result.is_finite() or abs(result) > Decimal("1000000000000"):
+            raise ValueError("Out of range")
+        return result
     except Exception:
-        return Decimal(default)
+        raise HTTPException(status_code=422, detail="Enter a valid finite number")
+
+
+def business_document_time(created_at):
+    # PostgreSQL timestamps are stored in UTC; bills show shop local time.
+    value = created_at or datetime.now(timezone.utc)
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(BUSINESS_TIMEZONE).strftime("%H:%M:%S")
+
+
+def begin_document_request(payload, kind, outlet_id, db):
+    request_id = payload.get("request_id")
+    if not request_id:
+        return None, None
+    try:
+        request_id = str(UUID(str(request_id)))
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid request ID")
+    key = f"{outlet_id}:{kind}:{request_id}"
+    digest = hashlib.sha256(json.dumps({k: v for k, v in payload.items() if k != "request_id"}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    # Serializes the same request across workers before allocating a number.
+    lock_id = int.from_bytes(hashlib.sha256(key.encode()).digest()[:8], "big", signed=True)
+    db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_id})
+    previous = db.get(models.DocumentRequest, key)
+    if previous and previous.payload_hash != digest:
+        raise HTTPException(status_code=409, detail="This request was already saved with different details; reload the saved document")
+    return (key, digest), previous.document_id if previous else None
+
+
+def record_document_request(request, document_id, db):
+    if request:
+        key, digest = request
+        db.add(models.DocumentRequest(id=key, payload_hash=digest, document_id=document_id))
 
 
 def serialize_dressed_stock_entry(entry):
@@ -2177,7 +2249,7 @@ def serialize_retail_bill(bill, items):
         "bill_number": bill.bill_number,
         "bill_mode": bill_mode,
         "date": str(bill.date),
-        "time": created_at.strftime("%H:%M:%S"),
+        "time": business_document_time(created_at),
         "customer_name": bill.customer_name or "",
         "customer_phone": bill.customer_phone or "",
         "customer_address": bill.customer_address or "",
@@ -2235,7 +2307,7 @@ def serialize_payment_receipt(receipt, balance_after=None):
         "outlet_id": str(receipt.outlet_id) if getattr(receipt, "outlet_id", None) else "",
         "receipt_number": receipt.receipt_number,
         "date": str(receipt.date),
-        "time": created_at.strftime("%H:%M:%S"),
+        "time": business_document_time(created_at),
         "party_name": receipt.party_name or "",
         "party_phone": receipt.party_phone or "",
         "party_address": receipt.party_address or "",
@@ -2510,7 +2582,7 @@ def create_vendor_entries(payload: dict = Body(...), input_date: str = None, db:
         db.commit()
     except Exception as e:
         db.rollback()
-        return {"error": "Saving vendor entries failed", "details": str(e)}
+        return {"error": "Saving vendor entries failed"}
 
     return upload_result(inserted, skipped, errors)
 
@@ -2633,7 +2705,7 @@ def create_dealer_entries(payload: dict = Body(...), input_date: str = None, db:
         db.commit()
     except Exception as e:
         db.rollback()
-        return {"error": "Saving dealer entries failed", "details": str(e)}
+        return {"error": "Saving dealer entries failed"}
 
     return upload_result(inserted, skipped, errors)
 
@@ -2701,7 +2773,7 @@ def create_payment_entries(payload: dict = Body(...), input_date: str = None, db
         db.commit()
     except Exception as e:
         db.rollback()
-        return {"error": "Saving payment entries failed", "details": str(e)}
+        return {"error": "Saving payment entries failed"}
 
     return upload_result(inserted, skipped, errors)
 
@@ -2781,7 +2853,7 @@ def create_mortality_entries(payload: dict = Body(...), input_date: str = None, 
         db.commit()
     except Exception as e:
         db.rollback()
-        return {"error": "Saving mortality entries failed", "details": str(e)}
+        return {"error": "Saving mortality entries failed"}
 
     return upload_result(inserted, skipped, errors)
 
@@ -2856,7 +2928,7 @@ def create_opening_balance_entries(payload: dict = Body(...), input_date: str = 
         db.commit()
     except Exception as e:
         db.rollback()
-        return {"error": "Saving opening balances failed", "details": str(e)}
+        return {"error": "Saving opening balances failed"}
 
     return upload_result(inserted, skipped, errors)
 
@@ -2914,22 +2986,24 @@ def create_opening_stock_entries(payload: dict = Body(...), input_date: str = No
         db.commit()
     except Exception as e:
         db.rollback()
-        return {"error": "Saving opening stock failed", "details": str(e)}
+        return {"error": "Saving opening stock failed"}
 
     return upload_result(inserted, skipped, errors)
 
 
 @app.post("/upload/vendor")
-def upload_vendor(file: UploadFile = File(...), preview: bool = False, input_date: str = None, db: Session = Depends(get_db)):
+def upload_vendor(file: UploadFile = File(...), preview: bool = False, input_date: str = None, db: Session = Depends(get_db), current_outlet: models.Outlet = Depends(get_current_outlet)):
 
     import io
     import hashlib
 
     filename = (file.filename or "").lower()
-    contents = file.file.read()
+    contents = file.file.read(10 * 1024 * 1024 + 1)
+    if len(contents) > 10 * 1024 * 1024:
+        return {"error": "File must be 10 MB or smaller"}
 
     # --- File hash (duplicate file protection) ---
-    file_hash = hashlib.sha256(contents).hexdigest()
+    file_hash = hashlib.sha256(str(current_outlet.id).encode() + b":upload_vendor:" + contents).hexdigest()
 
     existing_file = db.query(models.UploadedFile).filter_by(file_hash=file_hash).first()
     if existing_file:
@@ -2990,6 +3064,10 @@ def upload_vendor(file: UploadFile = File(...), preview: bool = False, input_dat
     except:
         return {"error": "Invalid numeric values"}
 
+    numeric = df.select_dtypes(include="number")
+    if numeric.isin([float("inf"), float("-inf")]).any().any():
+        return {"error": "Numbers must be finite"}
+
     inserted = 0
     skipped = 0
     errors = []
@@ -3026,6 +3104,7 @@ def upload_vendor(file: UploadFile = File(...), preview: bool = False, input_dat
 
             # --- Duplicate check ---
             existing_txn = db.query(models.Transaction).filter_by(
+                outlet_id=current_outlet.id,
                 date=date,
                 party_id=party_id,
                 weight=weight,
@@ -3043,6 +3122,7 @@ def upload_vendor(file: UploadFile = File(...), preview: bool = False, input_dat
 
             # --- Create sale transaction ---
             txn = models.Transaction(
+                outlet_id=current_outlet.id,
                 date=date,
                 party_id=party_id,
                 type="SALE",
@@ -3071,6 +3151,7 @@ def upload_vendor(file: UploadFile = File(...), preview: bool = False, input_dat
             return upload_result(inserted, skipped, errors, {"preview_mode": True})
 
         file_record = models.UploadedFile(
+            outlet_id=current_outlet.id,
             file_hash=file_hash,
             file_type="vendor"
         )
@@ -3079,21 +3160,23 @@ def upload_vendor(file: UploadFile = File(...), preview: bool = False, input_dat
 
     except Exception as e:
         db.rollback()
-        return {"error": "Transaction failed", "details": str(e)}
+        return {"error": "Transaction failed"}
 
     return upload_result(inserted, skipped, errors)
 
 @app.post("/upload/dealer")
-def upload_dealer(file: UploadFile = File(...), preview: bool = False, input_date: str = None, db: Session = Depends(get_db)):
+def upload_dealer(file: UploadFile = File(...), preview: bool = False, input_date: str = None, db: Session = Depends(get_db), current_outlet: models.Outlet = Depends(get_current_outlet)):
 
     import io
     import hashlib
 
     filename = (file.filename or "").lower()
-    contents = file.file.read()
+    contents = file.file.read(10 * 1024 * 1024 + 1)
+    if len(contents) > 10 * 1024 * 1024:
+        return {"error": "File must be 10 MB or smaller"}
 
     # --- File hash protection ---
-    file_hash = hashlib.sha256(contents).hexdigest()
+    file_hash = hashlib.sha256(str(current_outlet.id).encode() + b":upload_dealer:" + contents).hexdigest()
 
     existing_file = db.query(models.UploadedFile).filter_by(file_hash=file_hash).first()
     if existing_file:
@@ -3156,6 +3239,10 @@ def upload_dealer(file: UploadFile = File(...), preview: bool = False, input_dat
     except:
         return {"error": "Invalid numeric values"}
 
+    numeric = df.select_dtypes(include="number")
+    if numeric.isin([float("inf"), float("-inf")]).any().any():
+        return {"error": "Numbers must be finite"}
+
     inserted = 0
     skipped = 0
     errors = []
@@ -3198,6 +3285,7 @@ def upload_dealer(file: UploadFile = File(...), preview: bool = False, input_dat
 
             # --- Duplicate check (CORRECT TYPE) ---
             existing_txn = db.query(models.Transaction).filter_by(
+                outlet_id=current_outlet.id,
                 date=date,
                 party_id=party_id,
                 weight=weight,
@@ -3216,6 +3304,7 @@ def upload_dealer(file: UploadFile = File(...), preview: bool = False, input_dat
 
             # --- Create purchase transaction ---
             txn = models.Transaction(
+                outlet_id=current_outlet.id,
                 date=date,
                 party_id=party_id,
                 type="PURCHASE",
@@ -3245,6 +3334,7 @@ def upload_dealer(file: UploadFile = File(...), preview: bool = False, input_dat
             return upload_result(inserted, skipped, errors, {"preview_mode": True})
 
         file_record = models.UploadedFile(
+            outlet_id=current_outlet.id,
             file_hash=file_hash,
             file_type="dealer"
         )
@@ -3253,20 +3343,22 @@ def upload_dealer(file: UploadFile = File(...), preview: bool = False, input_dat
 
     except Exception as e:
         db.rollback()
-        return {"error": "Transaction failed", "details": str(e)}
+        return {"error": "Transaction failed"}
 
     return upload_result(inserted, skipped, errors)
 
 
 @app.post("/upload/payment")
-def upload_payment(file: UploadFile = File(...), preview: bool = False, input_date: str = None, db: Session = Depends(get_db)):
+def upload_payment(file: UploadFile = File(...), preview: bool = False, input_date: str = None, db: Session = Depends(get_db), current_outlet: models.Outlet = Depends(get_current_outlet)):
 
     import io
     import hashlib
 
     filename = (file.filename or "").lower()
-    contents = file.file.read()
-    file_hash = hashlib.sha256(contents).hexdigest()
+    contents = file.file.read(10 * 1024 * 1024 + 1)
+    if len(contents) > 10 * 1024 * 1024:
+        return {"error": "File must be 10 MB or smaller"}
+    file_hash = hashlib.sha256(str(current_outlet.id).encode() + b":upload_payment:" + contents).hexdigest()
 
     existing_file = db.query(models.UploadedFile).filter_by(file_hash=file_hash).first()
     if existing_file:
@@ -3304,6 +3396,10 @@ def upload_payment(file: UploadFile = File(...), preview: bool = False, input_da
     if not date_col and not fallback_date:
         return {"error": "Provide DATE column in file or select the upload date in the app"}
 
+    numeric = df.select_dtypes(include="number")
+    if numeric.isin([float("inf"), float("-inf")]).any().any():
+        return {"error": "Numbers must be finite"}
+
     inserted = 0
     skipped = 0
     errors = []
@@ -3336,6 +3432,7 @@ def upload_payment(file: UploadFile = File(...), preview: bool = False, input_da
             party_id = get_or_create_party(db, party_name, "BOTH", seen_aliases)
 
             existing_payment = db.query(models.Transaction).filter_by(
+                outlet_id=current_outlet.id,
                 date=target_date,
                 party_id=party_id,
                 type="PAYMENT",
@@ -3350,6 +3447,7 @@ def upload_payment(file: UploadFile = File(...), preview: bool = False, input_da
                 continue
 
             txn = models.Transaction(
+                outlet_id=current_outlet.id,
                 date=target_date,
                 party_id=party_id,
                 type="PAYMENT",
@@ -3373,6 +3471,7 @@ def upload_payment(file: UploadFile = File(...), preview: bool = False, input_da
             return upload_result(inserted, skipped, errors, {"preview_mode": True})
 
         file_record = models.UploadedFile(
+            outlet_id=current_outlet.id,
             file_hash=file_hash,
             file_type="payment"
         )
@@ -3381,20 +3480,22 @@ def upload_payment(file: UploadFile = File(...), preview: bool = False, input_da
 
     except Exception as e:
         db.rollback()
-        return {"error": "Transaction failed", "details": str(e)}
+        return {"error": "Transaction failed"}
 
     return upload_result(inserted, skipped, errors)
 
 
 @app.post("/upload/opening-balance")
-def upload_opening_balance(file: UploadFile = File(...), preview: bool = False, db: Session = Depends(get_db)):
+def upload_opening_balance(file: UploadFile = File(...), preview: bool = False, db: Session = Depends(get_db), current_outlet: models.Outlet = Depends(get_current_outlet)):
 
     import io
     import hashlib
 
     filename = (file.filename or "").lower()
-    contents = file.file.read()
-    file_hash = hashlib.sha256(contents).hexdigest()
+    contents = file.file.read(10 * 1024 * 1024 + 1)
+    if len(contents) > 10 * 1024 * 1024:
+        return {"error": "File must be 10 MB or smaller"}
+    file_hash = hashlib.sha256(str(current_outlet.id).encode() + b":upload_opening_balance:" + contents).hexdigest()
 
     existing_file = db.query(models.UploadedFile).filter_by(file_hash=file_hash).first()
     if existing_file:
@@ -3438,6 +3539,10 @@ def upload_opening_balance(file: UploadFile = File(...), preview: bool = False, 
     except Exception:
         return {"error": "Invalid opening balance values"}
 
+    numeric = df.select_dtypes(include="number")
+    if numeric.isin([float("inf"), float("-inf")]).any().any():
+        return {"error": "Numbers must be finite"}
+
     inserted = 0
     skipped = 0
     errors = []
@@ -3476,6 +3581,7 @@ def upload_opening_balance(file: UploadFile = File(...), preview: bool = False, 
             party_id = get_or_create_party(db, party_name, party_type, seen_aliases)
 
             existing_opening = db.query(models.Transaction).filter_by(
+                outlet_id=current_outlet.id,
                 date=target_date,
                 party_id=party_id,
                 type="OPENING",
@@ -3488,6 +3594,7 @@ def upload_opening_balance(file: UploadFile = File(...), preview: bool = False, 
                 continue
 
             txn = models.Transaction(
+                outlet_id=current_outlet.id,
                 date=target_date,
                 party_id=party_id,
                 type="OPENING",
@@ -3511,6 +3618,7 @@ def upload_opening_balance(file: UploadFile = File(...), preview: bool = False, 
             return upload_result(inserted, skipped, errors, {"preview_mode": True})
 
         file_record = models.UploadedFile(
+            outlet_id=current_outlet.id,
             file_hash=file_hash,
             file_type="opening_balance"
         )
@@ -3518,20 +3626,22 @@ def upload_opening_balance(file: UploadFile = File(...), preview: bool = False, 
         db.commit()
     except Exception as e:
         db.rollback()
-        return {"error": "Transaction failed", "details": str(e)}
+        return {"error": "Transaction failed"}
 
     return upload_result(inserted, skipped, errors)
 
 
 @app.post("/upload/opening-stock")
-def upload_opening_stock(file: UploadFile = File(...), preview: bool = False, db: Session = Depends(get_db)):
+def upload_opening_stock(file: UploadFile = File(...), preview: bool = False, db: Session = Depends(get_db), current_outlet: models.Outlet = Depends(get_current_outlet)):
 
     import io
     import hashlib
 
     filename = (file.filename or "").lower()
-    contents = file.file.read()
-    file_hash = hashlib.sha256(contents).hexdigest()
+    contents = file.file.read(10 * 1024 * 1024 + 1)
+    if len(contents) > 10 * 1024 * 1024:
+        return {"error": "File must be 10 MB or smaller"}
+    file_hash = hashlib.sha256(str(current_outlet.id).encode() + b":upload_opening_stock:" + contents).hexdigest()
 
     existing_file = db.query(models.UploadedFile).filter_by(file_hash=file_hash).first()
     if existing_file:
@@ -3575,6 +3685,10 @@ def upload_opening_stock(file: UploadFile = File(...), preview: bool = False, db
     except Exception:
         return {"error": "Invalid opening stock values"}
 
+    numeric = df.select_dtypes(include="number")
+    if numeric.isin([float("inf"), float("-inf")]).any().any():
+        return {"error": "Numbers must be finite"}
+
     inserted = 0
     skipped = 0
     errors = []
@@ -3599,6 +3713,7 @@ def upload_opening_stock(file: UploadFile = File(...), preview: bool = False, db
                 continue
 
             existing_stock = db.query(models.ItemOpeningStock).filter_by(
+                outlet_id=current_outlet.id,
                 date=target_date,
                 item_type=item_type
             ).first()
@@ -3609,6 +3724,7 @@ def upload_opening_stock(file: UploadFile = File(...), preview: bool = False, db
                 continue
 
             db.add(models.ItemOpeningStock(
+                outlet_id=current_outlet.id,
                 date=target_date,
                 item_type=item_type,
                 opening_quantity=opening_quantity,
@@ -3628,6 +3744,7 @@ def upload_opening_stock(file: UploadFile = File(...), preview: bool = False, db
             return upload_result(inserted, skipped, errors, {"preview_mode": True})
 
         file_record = models.UploadedFile(
+            outlet_id=current_outlet.id,
             file_hash=file_hash,
             file_type="opening_stock"
         )
@@ -3635,7 +3752,7 @@ def upload_opening_stock(file: UploadFile = File(...), preview: bool = False, db
         db.commit()
     except Exception as e:
         db.rollback()
-        return {"error": "Transaction failed", "details": str(e)}
+        return {"error": "Transaction failed"}
 
     return upload_result(inserted, skipped, errors)
 
@@ -3944,7 +4061,7 @@ def save_party_directory(payload: dict = Body(...), db: Session = Depends(get_db
         db.commit()
     except Exception as e:
         db.rollback()
-        return {"error": "Saving party directory failed", "details": str(e)}
+        return {"error": "Saving party directory failed"}
 
     return {
         "status": "success",
@@ -4490,7 +4607,7 @@ def get_dashboard(date: str, db: Session = Depends(get_db), scope=Depends(get_ou
         payments_paid = sum(event["amount"] for event in events if event["type"] == "PAYMENT PAID")
 
     except Exception as e:
-        return {"error": "Dashboard calculation failed", "details": str(e)}
+        return {"error": "Dashboard calculation failed"}
 
     return {
         "date": str(target_date),
@@ -5060,7 +5177,7 @@ def create_dressed_stock_entries(payload: dict = Body(...), input_date: str = No
         db.commit()
     except Exception as e:
         db.rollback()
-        return {"error": "Saving dressed stock failed", "details": str(e)}
+        return {"error": "Saving dressed stock failed"}
 
     return upload_result(inserted, skipped, errors)
 
@@ -5084,6 +5201,9 @@ def get_payment_receipt(receipt_id: UUID, db: Session = Depends(get_db), current
 
 @app.post("/payment-receipts")
 def create_payment_receipt(payload: dict = Body(...), db: Session = Depends(get_db), current_outlet: models.Outlet = Depends(get_current_outlet)):
+    request, previous_id = begin_document_request(payload, "receipt", current_outlet.id, db)
+    if previous_id:
+        return {"receipt": get_payment_receipt(previous_id, db, current_outlet)}
     target_date = parse_input_date(payload.get("date"))
     if not target_date:
         return {"error": "Invalid receipt date"}
@@ -5140,11 +5260,12 @@ def create_payment_receipt(payload: dict = Body(...), db: Session = Depends(get_
         source_ref=f"payment-receipt:{receipt.id}"
     ))
 
+    record_document_request(request, receipt.id, db)
     try:
         db.commit()
     except Exception as e:
         db.rollback()
-        return {"error": "Saving payment receipt failed", "details": str(e)}
+        return {"error": "Saving payment receipt failed"}
 
     db.refresh(receipt)
     txns = db.query(models.Transaction).filter(
@@ -5242,7 +5363,7 @@ def update_payment_receipt(receipt_id: UUID, payload: dict = Body(...), db: Sess
         db.commit()
     except Exception as e:
         db.rollback()
-        return {"error": "Updating payment receipt failed", "details": str(e)}
+        return {"error": "Updating payment receipt failed"}
 
     db.refresh(receipt)
     txns = db.query(models.Transaction).filter(
@@ -5276,12 +5397,15 @@ def get_retail_bill(bill_id: UUID, db: Session = Depends(get_db), current_outlet
 
 @app.post("/retail-bills")
 def create_retail_bill(payload: dict = Body(...), db: Session = Depends(get_db), current_outlet: models.Outlet = Depends(get_current_outlet)):
+    request, previous_id = begin_document_request(payload, "bill", current_outlet.id, db)
+    if previous_id:
+        return {"bill": get_retail_bill(previous_id, db, current_outlet)}
     target_date = parse_input_date(payload.get("date"))
     if not target_date:
         return {"error": "Invalid bill date"}
 
     raw_items = payload.get("items") or []
-    if not raw_items:
+    if not isinstance(raw_items, list) or not raw_items or len(raw_items) > 500:
         return {"error": "Add at least one retail item"}
 
     bill_number = reserve_shared_document_number(target_date, db, current_outlet.id)
@@ -5306,6 +5430,8 @@ def create_retail_bill(payload: dict = Body(...), db: Session = Depends(get_db),
     total_amount = Decimal("0")
 
     for index, raw_item in enumerate(raw_items, start=1):
+        if not isinstance(raw_item, dict):
+            return {"error": f"Invalid item on row {index}"}
         item_name = str(raw_item.get("item_name") or "").strip()
         if not item_name:
             return {"error": f"Item name missing on row {index}"}
@@ -5319,8 +5445,12 @@ def create_retail_bill(payload: dict = Body(...), db: Session = Depends(get_db),
         unit = str(raw_item.get("unit") or "KGS").strip().upper()
         weight = parse_decimal(raw_item.get("weight"))
 
-        if line_type != "DRESSED" and quantity <= 0:
-            return {"error": f"Quantity must be greater than 0 on row {index}"}
+        if rate < 0 or weight < 0 or parse_decimal(raw_item.get("amount")) < 0:
+            return {"error": f"Rate, weight and amount cannot be negative on row {index}"}
+        if unit not in ["KGS", "PCS"]:
+            return {"error": f"Unit must be KGS or PCS on row {index}"}
+        if line_type != "DRESSED" and (quantity < 0 or (quantity <= 0 and (unit == "PCS" or weight <= 0))):
+            return {"error": f"Enter a positive weight or piece quantity on row {index}"}
 
         if line_type != "DRESSED" and unit == "KGS" and weight <= 0:
             weight = quantity
@@ -5342,6 +5472,9 @@ def create_retail_bill(payload: dict = Body(...), db: Session = Depends(get_db),
             amount_base = weight if weight > 0 else quantity
             amount = amount_base * rate
 
+        amount = amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if amount <= 0:
+            return {"error": f"Amount must be greater than 0 on row {index}"}
         normalized_items.append({
             "line_order": index,
             "item_name": item_name,
@@ -5361,6 +5494,8 @@ def create_retail_bill(payload: dict = Body(...), db: Session = Depends(get_db),
     if ice_amount < 0:
         return {"error": "Ice amount cannot be negative"}
 
+    ice_amount = ice_amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    paid_amount = paid_amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     total_amount += ice_amount
 
     if raw_paid_amount in [None, ""] and payment_mode.strip().upper() != "CREDIT":
@@ -5468,6 +5603,7 @@ def create_retail_bill(payload: dict = Body(...), db: Session = Depends(get_db),
         ))
 
     recompute_dressed_stock_remaining(db, target_date, current_outlet.id)
+    record_document_request(request, bill.id, db)
     db.commit()
     db.refresh(bill)
 
@@ -5499,7 +5635,7 @@ def update_retail_bill(bill_id: UUID, payload: dict = Body(...), db: Session = D
         return {"error": "Invalid bill date"}
 
     raw_items = payload.get("items") or []
-    if not raw_items:
+    if not isinstance(raw_items, list) or not raw_items or len(raw_items) > 500:
         return {"error": "Add at least one retail item"}
 
     bill_number = str(payload.get("bill_number") or "").strip()
@@ -5540,6 +5676,8 @@ def update_retail_bill(bill_id: UUID, payload: dict = Body(...), db: Session = D
     total_amount = Decimal("0")
 
     for index, raw_item in enumerate(raw_items, start=1):
+        if not isinstance(raw_item, dict):
+            return {"error": f"Invalid item on row {index}"}
         item_name = str(raw_item.get("item_name") or "").strip()
         if not item_name:
             return {"error": f"Item name missing on row {index}"}
@@ -5553,8 +5691,12 @@ def update_retail_bill(bill_id: UUID, payload: dict = Body(...), db: Session = D
         unit = str(raw_item.get("unit") or "KGS").strip().upper()
         weight = parse_decimal(raw_item.get("weight"))
 
-        if line_type != "DRESSED" and quantity <= 0:
-            return {"error": f"Quantity must be greater than 0 on row {index}"}
+        if rate < 0 or weight < 0 or parse_decimal(raw_item.get("amount")) < 0:
+            return {"error": f"Rate, weight and amount cannot be negative on row {index}"}
+        if unit not in ["KGS", "PCS"]:
+            return {"error": f"Unit must be KGS or PCS on row {index}"}
+        if line_type != "DRESSED" and (quantity < 0 or (quantity <= 0 and (unit == "PCS" or weight <= 0))):
+            return {"error": f"Enter a positive weight or piece quantity on row {index}"}
 
         if line_type != "DRESSED" and unit == "KGS" and weight <= 0:
             weight = quantity
@@ -5576,6 +5718,9 @@ def update_retail_bill(bill_id: UUID, payload: dict = Body(...), db: Session = D
             amount_base = weight if weight > 0 else quantity
             amount = amount_base * rate
 
+        amount = amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if amount <= 0:
+            return {"error": f"Amount must be greater than 0 on row {index}"}
         normalized_items.append({
             "line_order": index,
             "item_name": item_name,
@@ -5595,6 +5740,8 @@ def update_retail_bill(bill_id: UUID, payload: dict = Body(...), db: Session = D
     if ice_amount < 0:
         return {"error": "Ice amount cannot be negative"}
 
+    ice_amount = ice_amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    paid_amount = paid_amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     total_amount += ice_amount
 
     if raw_paid_amount in [None, ""] and payment_mode.strip().upper() != "CREDIT":
@@ -5717,7 +5864,7 @@ def update_retail_bill(bill_id: UUID, payload: dict = Body(...), db: Session = D
         db.commit()
     except Exception as e:
         db.rollback()
-        return {"error": "Updating retail bill failed", "details": str(e)}
+        return {"error": "Updating retail bill failed"}
 
     db.refresh(bill)
     saved_items = db.query(models.RetailBillItem).filter(
