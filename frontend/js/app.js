@@ -34,7 +34,7 @@ function getStoredOutletId() {
 }
 
 function pageRequiresSingleOutlet(page) {
-  return ["retail", "billing-setup", "upload", "daily-sheet"].includes(page);
+  return ["retail", "billing-setup", "upload", "daily-sheet", "staff"].includes(page);
 }
 
 function getSingleOutletFallback() {
@@ -164,6 +164,8 @@ function updateAuthUi() {
     accessControlMenu.style.display = isOwner() ? "" : "none";
   }
 
+  const staffMenu = document.getElementById("menu-staff");
+  if (staffMenu) staffMenu.style.display = isOwner() ? "" : "none";
   renderOutletSwitcher();
 }
 
@@ -523,8 +525,8 @@ function loadPage(page, options = {}) {
       return;
     }
     const selectedOutlet = normalizeSelectedOutletId(page);
-    if (page === "access-control" && !isOwner()) {
-      showToast("Access Control is only for owner");
+    if (["access-control", "staff"].includes(page) && !isOwner()) {
+      showToast("This page is only for owner");
       return;
     }
     if (pageRequiresSingleOutlet(page) && selectedOutlet === ALL_OUTLETS_TOKEN) {
@@ -555,6 +557,11 @@ function loadPage(page, options = {}) {
       if (button === activeBtn) button.setAttribute("aria-current", "page");
       else button.removeAttribute("aria-current");
     });
+
+    if (page === "staff") {
+      title.innerText = "Staff & Salary";
+      renderStaffPage(content);
+    }
 
     // --- Upload Page
     if (page === "upload") {
@@ -811,7 +818,9 @@ function loadPage(page, options = {}) {
               <div class="dashboard-mini-card"><span>Retail sales</span><h2 id="dashboardRetailSales">₹ 0</h2></div>
               <div class="dashboard-mini-card"><span>Dressed sales</span><h2 id="dashboardDressedSales">₹ 0</h2></div>
               <div class="dashboard-mini-card"><span>Payments in</span><h2 id="dashboardPaymentsReceived">₹ 0</h2></div>
-              <div class="dashboard-mini-card"><span>Payments out</span><h2 id="dashboardPaymentsPaid">₹ 0</h2></div>
+              <div class="dashboard-mini-card"><span>Payments out (includes salaries)</span><h2 id="dashboardPaymentsPaid">₹ 0</h2></div>
+              <div class="dashboard-mini-card"><span>Salaries paid</span><h2 id="dashboardSalaryPaid">₹ 0</h2></div>
+              <div class="dashboard-mini-card"><span>Gross profit less salaries paid</span><h2 id="dashboardAfterSalary">N/A</h2><p>Cash basis</p></div>
               <div class="dashboard-mini-card"><span>Mortality</span><h2 id="dashboardMortality">0 kg</h2><p id="dashboardMortalityNag">0 NAG</p></div>
             </div>
           </details>
@@ -1454,8 +1463,9 @@ function loadPage(page, options = {}) {
             </div>
             <div class="metric green">
               <span>Net Cash</span>
-              <h2 id="analyticsCash">₹ 0</h2>
+              <h2 id="analyticsCash">₹ 0</h2><p>After salary payments</p>
             </div>
+            <div class="metric"><span>Salaries paid</span><h2 id="analyticsSalaryPaid">₹ 0</h2></div>
           </div>
 
           <div class="chart-grid analytics-chart-grid">

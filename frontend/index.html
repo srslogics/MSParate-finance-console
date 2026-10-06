@@ -11,9 +11,9 @@
   <title>MSParte | Finance Console</title>
 
   <!-- Favicon -->
-  <link rel="icon" href="assets/app-icon.svg?v=20260929-8">
-  <link rel="apple-touch-icon" href="assets/app-icon.svg?v=20260929-8">
-  <link rel="manifest" href="manifest.webmanifest?v=20260929-8">
+  <link rel="icon" href="assets/app-icon.svg?v=20261006-1">
+  <link rel="apple-touch-icon" href="assets/app-icon.svg?v=20261006-1">
+  <link rel="manifest" href="manifest.webmanifest?v=20261006-1">
 
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -21,11 +21,12 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 
   <!-- Styles -->
-<link rel="stylesheet" href="css/style.css?v=20260929-8">
+<link rel="stylesheet" href="css/style.css?v=20261006-1">
 
-  <link rel="stylesheet" href="css/usability.css?v=20260929-8">
+  <link rel="stylesheet" href="css/usability.css?v=20261006-1">
 
   <!-- Charts & icons -->
+  <link rel="stylesheet" href="css/staff.css?v=20261006-1">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
@@ -54,6 +55,7 @@
         <button type="button" id="menu-dashboard" onclick="loadPage('dashboard')"><i data-lucide="layout-dashboard"></i><span>Overview</span></button>
         <button type="button" id="menu-retail" onclick="loadPage('retail')"><i data-lucide="receipt-text"></i><span>Bills & Payments</span></button>
         <button type="button" id="menu-upload" onclick="loadPage('upload')"><i data-lucide="list-plus"></i><span>Daily Entries</span></button>
+        <button type="button" id="menu-staff" style="display:none" onclick="loadPage('staff')"><i data-lucide="users"></i><span>Staff &amp; Salary</span></button>
         <button type="button" id="menu-daily-sheet" onclick="loadPage('daily-sheet')"><i data-lucide="sheet"></i><span>Daily Sheet</span></button>
       </div>
 
@@ -115,20 +117,21 @@
 </div>
 
 <!-- Scripts (order matters) -->
-<script src="js/api.js?v=20260929-8"></script>
-<script src="js/app.js?v=20260929-8"></script>
-<script src="js/upload.js?v=20260929-8"></script>
-<script src="js/dashboard.js?v=20260929-8"></script>
-<script src="js/ledger.js?v=20260929-8"></script>
-<script src="js/analytics.js?v=20260929-8"></script>
-<script src="js/retail.js?v=20260929-8"></script>
-<script src="js/daily-sheet.js?v=20260929-8"></script>
-<script src="js/reports.js?v=20260929-8"></script>
-<script src="js/usability.js?v=20260929-8"></script>
+<script src="js/api.js?v=20261006-1"></script>
+<script src="js/app.js?v=20261006-1"></script>
+<script src="js/upload.js?v=20261006-1"></script>
+<script src="js/dashboard.js?v=20261006-1"></script>
+<script src="js/ledger.js?v=20261006-1"></script>
+<script src="js/analytics.js?v=20261006-1"></script>
+<script src="js/retail.js?v=20261006-1"></script>
+<script src="js/daily-sheet.js?v=20261006-1"></script>
+<script src="js/reports.js?v=20261006-1"></script>
+<script src="js/staff.js?v=20261006-1"></script>
+<script src="js/usability.js?v=20261006-1"></script>
 <script>
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=20260929-8").catch(err => {
+      navigator.serviceWorker.register("./sw.js?v=20261006-1").catch(err => {
         console.warn("Service worker registration failed", err);
       });
     });

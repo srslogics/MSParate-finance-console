@@ -26,6 +26,7 @@ const server = http.createServer((req,res) => {
  const writes=[]; const errors=[];
  const user={id:'example-owner',username:'Demo owner',role:'OWNER',can_view_all_outlets:true,outlets:[{id:'example-outlet',name:'Demo outlet'}]};
  const bodies={
+  '/staff/attendance':{rows:[]}, '/staff/salaries':{rows:[],payments:[]}, '/staff/employees':{employees:[]},
   '/auth/setup-status':{has_users:true}, '/auth/me':{user}, '/auth/login':{token:'synthetic-test-token',user},
   '/dashboard':{sales:0,purchase:0,receivable:0,payable:0},
   '/retail-bills/next-number':{bill_number:'1'}, '/payment-receipts/next-number':{receipt_number:'1'},
@@ -63,7 +64,7 @@ const server = http.createServer((req,res) => {
  const open=async name=>{await page.evaluate(name=>loadPage(name),name);await page.waitForTimeout(500);};
  for(const width of [1440,768,390,320]){
   await page.setViewportSize({width,height:1000});
-  for(const name of ['dashboard','retail','upload','ledger','reports','analytics','daily-sheet','billing-setup','access-control']){
+  for(const name of ['dashboard','retail','upload','ledger','reports','analytics','daily-sheet','billing-setup','access-control','staff']){
    await open(name);
    const state=await page.evaluate(()=>({
     overflow:document.documentElement.scrollWidth>innerWidth+1,
@@ -75,7 +76,7 @@ const server = http.createServer((req,res) => {
    assert.deepEqual(state.unlabelled,[],`${name}: controls need labels`);
   }
  }
- console.log('PASS all 9 pages at desktop, tablet, and 2 phone widths');
+ console.log('PASS all 10 pages at desktop, tablet, and 2 phone widths');
  await page.setViewportSize({width:390,height:900});await open('upload');
  for(const mode of ['purchases','sales','payments','stock','setup']){
   const button=page.locator(`[data-entry-tab="${mode}"]`);await button.click();

@@ -1,5 +1,6 @@
 /* Presentation helpers. Existing fields and transaction handlers remain the source of truth. */
 const FINANCE_PAGE_HELP = {
+  staff: "Mark attendance, prepare monthly salaries, and record payments in hisab.",
   dashboard: "Your day at a glance. Start a bill, record a payment, or check a balance.",
   retail: "Create a bill or record money received or paid. Save, print, and share from one place.",
   upload: "Choose the working date, select an entry type, and save your entries.",

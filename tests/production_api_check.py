@@ -110,6 +110,42 @@ xlsx=call('GET',f'/daily-sheet/export?date={DAY}&sheet_type=stock')
 wb=load_workbook(BytesIO(xlsx.content));assert wb.active.max_row>5
 pdf=call('GET',f'/reports/export?report_type=summary&file_format=pdf&start_date={DAY}&end_date={DAY}')
 assert pdf.content.startswith(b'%PDF'),pdf.text[:100]
+# Payroll uses the same expense ledger, without creating customer balances.
+for path in ['/staff/employees', '/staff/attendance?date='+DAY, '/staff/salaries?month=2026-09']:
+    call('GET',path,headers=staff_headers,status=403)
+employee=call('POST','/staff/employees',{'name':'Synthetic payroll employee','monthly_salary':12000,'joined_on':'2026-09-01'})['employee']
+eid=employee['id']
+call('PUT','/staff/attendance',{'date':DAY,'rows':[{'employee_id':eid,'status':'ABSENT'}]})
+assert call('GET','/staff/salaries?month=2026-09')['rows'][0]['salary']['net_salary']==12000
+salary=call('PUT','/staff/salaries/'+eid,{'month':'2026-09','base_salary':12000,'extras':500,'deductions':250,'notes':'Synthetic adjustment'})['salary']
+call('PUT','/staff/salaries/'+eid,{'month':'2026-09','base_salary':12000},headers={'X-Outlet-Id':other_id},status=404)
+before=call('GET',f'/dashboard?date={DAY}')
+pay={'request_id':str(uuid4()),'salary_id':salary['id'],'date':DAY,'amount':4000,'payment_mode':'Cash'}
+with ThreadPoolExecutor(max_workers=5) as pool:
+    replies=list(pool.map(lambda _:call('POST','/staff/payments',pay),range(5)))
+assert len({r['payment']['id'] for r in replies})==1
+assert all(r['salary']['paid']==4000 for r in replies)
+call('POST','/staff/payments',{**pay,'amount':1},status=409)
+call('POST','/staff/payments',{**pay,'request_id':str(uuid4())},headers={'X-Outlet-Id':other_id},status=404)
+call('POST','/staff/payments',{**pay,'request_id':str(uuid4())},headers=staff_headers,status=403)
+# Two distinct full-balance payments racing: only one may commit.
+def settle(_):
+    return client.post('/staff/payments',json={**pay,'request_id':str(uuid4()),'amount':8250,'payment_mode':'Bank'})
+with ThreadPoolExecutor(max_workers=2) as pool:
+    settlements=list(pool.map(settle,range(2)))
+assert sorted(r.status_code for r in settlements)==[200,409]
+month=call('GET','/staff/salaries?month=2026-09')
+assert month['rows'][0]['salary']['paid']==12250 and month['rows'][0]['salary']['balance']==0
+assert len(month['payments'])==2
+call('PUT','/staff/salaries/'+eid,{'month':'2026-09','base_salary':12000},status=409)
+after=call('GET',f'/dashboard?date={DAY}')
+assert after['salary_paid']==12250 and after['payments_paid']==before['payments_paid']+12250
+assert after['receivable']==before['receivable'] and after['payable']==before['payable']
+assert call('GET',f'/daily-sheet?date={DAY}&sheet_type=stock')['salary_hisab']['paid']==12250
+assert call('GET',f'/dashboard?date={DAY}',headers={'X-Outlet-Id':other_id})['salary_paid']==0
+summary=call('GET',f'/reports/export?report_type=summary&file_format=json&start_date={DAY}&end_date={DAY}')
+assert summary['rows'][0]['Salary Paid']==12250
+print('PASS staff attendance, fixed salary adjustments, concurrent payment deduplication, overpayment protection and hisab integration')
 call('POST','/auth/logout',headers=staff_headers)
 call('GET',f'/dashboard?date={DAY}',headers=staff_headers,status=401)
 print('PASS dashboard, stock sheets, analytics, histories, Excel export and logout')

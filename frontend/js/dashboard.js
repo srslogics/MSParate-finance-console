@@ -34,6 +34,8 @@ async function loadDashboard() {
     setValue("dashboardDressedSales", data.dressed_sales_amount);
     setValue("dashboardPaymentsReceived", data.payments_received);
     setValue("dashboardPaymentsPaid", data.payments_paid);
+    setValue("dashboardSalaryPaid", data.salary_paid);
+    setValue("dashboardAfterSalary", data.after_salary_payments);
     setKgValue("dashboardMortality", data.mortality_weight);
     setTextValue("dashboardMortalityNag", `${Number(data.mortality_quantity || 0).toLocaleString()} NAG`);
     setTextValue(

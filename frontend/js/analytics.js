@@ -60,6 +60,7 @@ function renderAnalyticsSummary(summary) {
   setText("analyticsPurchase", formatMoney(summary.purchase));
   setText("analyticsProfit", summary.profit == null ? "N/A" : formatMoney(summary.profit));
   setText("analyticsCash", formatMoney(summary.net_cash));
+  setText("analyticsSalaryPaid", formatMoney(summary.salary_paid));
 }
 
 async function loadAnalyticsPart(url, fallback, renderer, requestToken) {

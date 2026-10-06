@@ -10,7 +10,7 @@ const assert=require('node:assert/strict');const {chromium}=require('playwright'
  await page.goto(origin);await page.getByLabel('Username',{exact:true}).fill('audit_owner');
  await page.getByLabel('Password',{exact:true}).fill('local-test-password');await page.getByLabel('Password',{exact:true}).press('Enter');
  await page.locator('.quick-actions').waitFor();
- for(const name of ['dashboard','retail','upload','ledger','reports','analytics','daily-sheet','billing-setup','access-control']){
+ for(const name of ['dashboard','retail','upload','ledger','reports','analytics','daily-sheet','billing-setup','access-control','staff']){
   await page.evaluate(name=>loadPage(name),name);await page.waitForTimeout(300);
  }
  await page.evaluate(()=>loadPage('retail'));await page.waitForTimeout(700);await page.locator('#retailRegularRows .retailItemName').fill('Synthetic weight-only item');
@@ -23,6 +23,6 @@ const assert=require('node:assert/strict');const {chromium}=require('playwright'
  const download=page.waitForEvent('download');await page.evaluate(()=>downloadTemplate('vendor'));
  assert.equal((await download).suggestedFilename(),'vendor_template.csv');
  assert.deepEqual(errors,[]);
- console.log('PASS real browser login, all 9 screens, weight-only bill save and authenticated template download');
+ console.log('PASS real browser login, all 10 screens, weight-only bill save and authenticated template download');
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1});

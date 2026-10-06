@@ -70,6 +70,12 @@ async function loadDailySheet() {
       }
 
       content.appendChild(createFinalSummarySection(data.final_stock));
+      const salarySection = document.createElement("section");
+      salarySection.className = "section";
+      const salaryHeading = document.createElement("h3"); salaryHeading.textContent = "Salary hisab";
+      const salaryText = document.createElement("p");
+      salaryText.textContent = `Salaries paid: ${formatMoneyCompact(data.salary_hisab?.paid || 0)}. Gross profit less salaries paid: ${data.salary_hisab?.after_salary_payments == null ? "N/A" : formatMoneyCompact(data.salary_hisab.after_salary_payments)} (cash basis).`;
+      salarySection.append(salaryHeading, salaryText); content.appendChild(salarySection);
 
       if (data.rate_analysis) {
         const sections = [

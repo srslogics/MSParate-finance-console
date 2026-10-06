@@ -292,3 +292,55 @@ class LoginLimit(Base):
     id = Column(String, primary_key=True)
     failures = Column(Integer, nullable=False, default=0)
     window_start = Column(TIMESTAMP, nullable=False)
+
+
+class Employee(Base):
+    __tablename__ = "employees"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    outlet_id = Column(UUID(as_uuid=True), ForeignKey("outlets.id"), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    phone = Column(String)
+    designation = Column(String)
+    monthly_salary = Column(Numeric(14, 2), nullable=False)
+    joined_on = Column(Date, nullable=False)
+    is_active = Column(String, nullable=False, default="true")
+    created_at = Column(TIMESTAMP, server_default=func.now())
+
+
+class StaffAttendance(Base):
+    __tablename__ = "staff_attendance"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    employee_id = Column(UUID(as_uuid=True), ForeignKey("employees.id"), nullable=False)
+    date = Column(Date, nullable=False)
+    status = Column(String, nullable=False)
+    notes = Column(String)
+    recorded_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
+    __table_args__ = (UniqueConstraint("employee_id", "date", name="unique_staff_attendance_day"),)
+
+
+class StaffSalary(Base):
+    __tablename__ = "staff_salaries"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    employee_id = Column(UUID(as_uuid=True), ForeignKey("employees.id"), nullable=False)
+    month = Column(Date, nullable=False)
+    base_salary = Column(Numeric(14, 2), nullable=False)
+    extras = Column(Numeric(14, 2), nullable=False, default=0)
+    deductions = Column(Numeric(14, 2), nullable=False, default=0)
+    notes = Column(String)
+    recorded_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
+    __table_args__ = (UniqueConstraint("employee_id", "month", name="unique_staff_salary_month"),)
+
+
+class StaffSalaryPayment(Base):
+    __tablename__ = "staff_salary_payments"
+    # Client-generated ID also deduplicates retries after a lost response.
+    id = Column(UUID(as_uuid=True), primary_key=True)
+    salary_id = Column(UUID(as_uuid=True), ForeignKey("staff_salaries.id"), nullable=False, index=True)
+    date = Column(Date, nullable=False)
+    amount = Column(Numeric(14, 2), nullable=False)
+    payment_mode = Column(String, nullable=False)
+    notes = Column(String)
+    recorded_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    created_at = Column(TIMESTAMP, server_default=func.now())

@@ -1162,6 +1162,17 @@ def stock_total_for_day(histories, day, key):
     return complete_sum(history.snapshot(day)["totals"][key] for history in histories)
 
 
+def salary_expense_total(db, scope, start=None, end=None):
+    query = db.query(func.coalesce(func.sum(models.Transaction.amount), 0)).filter(
+        models.Transaction.type == "EXPENSE", models.Transaction.category == "STAFF SALARY",
+        outlet_scope_filter(models.Transaction, scope))
+    if start:
+        query = query.filter(models.Transaction.date >= start)
+    if end:
+        query = query.filter(models.Transaction.date <= end)
+    return Decimal(query.scalar() or 0)
+
+
 def financial_events(db, scope, start=None, end=None):
     query = apply_outlet_scope(db.query(models.Transaction), models.Transaction, scope)
     if start:
@@ -2005,6 +2016,9 @@ def build_daily_sheet_export_report(sheet_payload, sheet_type, target_date):
         rows.append({"Section": "Retail Credit", "Party": "TOTAL",
                      "Bill Amount": credit_total.get("total_amount"), "Paid": credit_total.get("paid_amount"),
                      "Outstanding": credit_total.get("outstanding_amount")})
+    salary_hisab = sheet_payload.get("salary_hisab") or {}
+    rows.append({"Section": "Salary Hisab", "Goods": "Salaries paid", "Total": salary_hisab.get("paid", 0)})
+    rows.append({"Section": "Salary Hisab", "Goods": "Gross profit less salaries paid (cash basis)", "Total": salary_hisab.get("after_salary_payments")})
     columns = ["Section", "Goods", "NAG", "Weight", "Rate", "Total", "Party", "Bill No",
                "Bill Amount", "Paid", "Outstanding", "Mode"]
     meta = [f"Date: {format_export_date(target_date)}", "Stock basis: Live birds"]
@@ -4335,12 +4349,15 @@ def export_report(
             day = event["date"]
             row = by_date.setdefault(day, {
                 "Sales": Decimal("0"), "Purchase": Decimal("0"),
-                "Payment Received": Decimal("0"), "Payment Paid": Decimal("0"), "Opening": Decimal("0"),
+                "Payment Received": Decimal("0"), "Payment Paid": Decimal("0"), "Salary Paid": Decimal("0"), "Opening": Decimal("0"),
             })
             key = {"SALE": "Sales", "PURCHASE": "Purchase", "PAYMENT RECEIVED": "Payment Received",
                    "PAYMENT PAID": "Payment Paid"}.get(event["type"])
             if event["entry_type"] == "OPENING":
                 key = "Opening"
+            if event["entry_type"] == "EXPENSE" and event["category"] == "STAFF SALARY":
+                row["Salary Paid"] += Decimal(event["amount"])
+                row["Payment Paid"] += Decimal(event["amount"])
             if key:
                 row[key] += Decimal(event["amount"])
         histories = scoped_stock_histories(db, scope, end or max(by_date, default=pd.Timestamp.today().date()))
@@ -4349,9 +4366,11 @@ def export_report(
             **{key: float(value) for key, value in row.items()},
             "Profit": optional_float(stock_total_for_day(histories, day, "gross_profit")),
         } for day, row in sorted(by_date.items())]
-        columns = ["Date", "Sales", "Purchase", "Profit", "Payment Received", "Payment Paid", "Opening"]
+        for row in rows:
+            row["After Salary Payments"] = row["Profit"] - row["Salary Paid"] if row["Profit"] is not None else None
+        columns = ["Date", "Sales", "Purchase", "Profit", "Salary Paid", "After Salary Payments", "Payment Received", "Payment Paid", "Opening"]
         return report_response(rows, columns, "financial_summary", file_format, "Financial Summary",
-                               meta_rows=["Profit is gross margin using purchase costs; blank means cost data is incomplete."])
+                               meta_rows=["Profit is gross margin using purchase costs; blank means cost data is incomplete. Payment Paid includes salaries. After Salary Payments deducts salaries paid on that date from gross profit (cash basis)."])
 
     if report_type == "outstanding":
         as_of = end or ledger_today()
@@ -4604,7 +4623,8 @@ def get_dashboard(date: str, db: Session = Depends(get_db), scope=Depends(get_ou
         profit = optional_float(stock_totals["gross_profit"])
         events = financial_events(db, scope, target_date, target_date)
         payments_received = sum(event["amount"] for event in events if event["type"] == "PAYMENT RECEIVED")
-        payments_paid = sum(event["amount"] for event in events if event["type"] == "PAYMENT PAID")
+        salary_paid = salary_expense_total(db, scope, target_date, target_date)
+        payments_paid = sum(event["amount"] for event in events if event["type"] == "PAYMENT PAID") + salary_paid
 
     except Exception as e:
         return {"error": "Dashboard calculation failed"}
@@ -4629,6 +4649,8 @@ def get_dashboard(date: str, db: Session = Depends(get_db), scope=Depends(get_ou
         "dressed_sales_amount": float(dressed_sales_amount or 0),
         "payments_received": float(payments_received or 0),
         "payments_paid": float(payments_paid or 0),
+        "salary_paid": float(salary_paid),
+        "after_salary_payments": profit - float(salary_paid) if profit is not None else None,
         "mortality_weight": float(mortality_weight or 0),
         "mortality_quantity": float(mortality_quantity or 0),
         "processed_items_count": int(processed_rows or 0),
@@ -4868,7 +4890,8 @@ def analytics_summary(start_date: str, end_date: str, db: Session = Depends(get_
     purchase = Decimal(totals.purchase or 0)
     events = financial_events(db, scope, start, end)
     received = sum((event["amount"] for event in events if event["type"] == "PAYMENT RECEIVED"), Decimal("0"))
-    paid = sum((event["amount"] for event in events if event["type"] == "PAYMENT PAID"), Decimal("0"))
+    salary_paid = salary_expense_total(db, scope, start, end)
+    paid = sum((event["amount"] for event in events if event["type"] == "PAYMENT PAID"), Decimal("0")) + salary_paid
     histories = scoped_stock_histories(db, scope, end)
     days = [day.date() for day in pd.date_range(start, end)]
     leakage = complete_sum(stock_total_for_day(histories, day, "leakage") for day in days)
@@ -4881,6 +4904,8 @@ def analytics_summary(start_date: str, end_date: str, db: Session = Depends(get_
         "received": float(received),
         "paid": float(paid),
         "net_cash": float(received - paid),
+        "salary_paid": float(salary_paid),
+        "after_salary_payments": optional_float(profit - salary_paid) if profit is not None else None,
         "leakage": optional_float(leakage)
     }
 
@@ -4944,13 +4969,13 @@ def payment_modes(start_date: str, end_date: str, db: Session = Depends(get_db),
         ).label("received"),
         func.sum(
             case(
-                (models.Transaction.category == "PAID", models.Transaction.amount),
+                (or_(models.Transaction.category == "PAID", models.Transaction.type == "EXPENSE"), models.Transaction.amount),
                 else_=0
             )
         ).label("paid")
     ).filter(
         models.Transaction.date.between(start, end),
-        models.Transaction.type == "PAYMENT",
+        or_(models.Transaction.type == "PAYMENT", and_(models.Transaction.type == "EXPENSE", models.Transaction.category == "STAFF SALARY")),
         outlet_scope_filter(models.Transaction, scope)
     ).group_by(
         mode
@@ -6355,6 +6380,10 @@ def daily_sheet(
     return {
         "date": str(target_date),
         "stock_warning": stock_warning,
+        "salary_hisab": {
+            "paid": float(salary_expense_total(db, scope, target_date, target_date)),
+            "after_salary_payments": optional_float(gross_profit - salary_expense_total(db, scope, target_date, target_date)) if gross_profit is not None else None,
+        },
         "opening_stock": {
             "rows": opening_rows,
             "total": format_sheet_row("TOTAL", opening_total_weight, (opening_total_amount / opening_total_weight) if opening_total_weight and opening_total_amount is not None else None, opening_total_amount, opening_total_quantity)
@@ -6636,6 +6665,10 @@ def profit_by_item(start_date: str, end_date: str, db: Session = Depends(get_db)
         "purchase": float(sum((row["purchase_amount"] for row in rows), Decimal("0"))),
         "profit": optional_float(complete_sum(row["gross_profit"] for row in rows)),
     } for item, rows in grouped.items() if any(row["sales_amount"] or row["dressed_sales_amount"] or row["purchase_amount"] for row in rows)]
+
+# Registered after shared auth/outlet dependencies have been defined.
+from app.staff import make_router as make_staff_router
+app.include_router(make_staff_router(get_db, get_current_outlet, require_owner))
 
 if __name__ == "__main__":
     uvicorn.run("app.main:app", host="0.0.0.0", port=10000)
